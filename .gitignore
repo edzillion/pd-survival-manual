@@ -9,7 +9,8 @@ luac.out
 # Object files
 *.o
 *.os
-*.ko
+*.ko/source/fonts
+
 *.obj
 *.elf
 
@@ -26,7 +27,8 @@ luac.out
 *.exp
 
 # Shared objects (inc. Windows DLLs)
-*.dll
+*.dll/source/fonts
+
 *.so
 *.so.*
 *.dylib
@@ -39,3 +41,9 @@ luac.out
 *.x86_64
 *.hex
 
+# Playdate
+**/*.pdx/
+
+# Node
+/node_modules
+/source/fonts

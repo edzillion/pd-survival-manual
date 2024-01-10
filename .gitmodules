@@ -1,0 +1,7 @@
+[submodule "playout"]
+	path = playout
+	url = https://github.com/edzillion/playout.git
+	branch = feat--basic-horizontal-scrolling
+[submodule "SurvivalManual.wiki"]
+	path = SurvivalManual.wiki
+	url = https://github.com/ligi/SurvivalManual.wiki.git

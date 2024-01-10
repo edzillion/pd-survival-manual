@@ -47,3 +47,5 @@ luac.out
 # Node
 /node_modules
 /source/fonts
+/source/images
+/source/json

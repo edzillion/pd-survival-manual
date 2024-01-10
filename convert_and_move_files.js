@@ -26,6 +26,13 @@ const pngFiles = files.filter((file) => path.extname(file) === ".png");
 
 assert(mdFiles.length, "No .md files found in folder: /" + MARKDOWN_FOLDER);
 
+
+fs.copyFile("playout/playout.lua", "source/playout.lua", (err) => {
+	if (err) throw err;
+	console.info("playout.lua copied to source folder");
+});
+
+
 console.info("Files found. Converting ...");
 
 mdFiles.forEach(function (filename) {

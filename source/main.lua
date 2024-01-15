@@ -8,12 +8,15 @@ local playdate_markdown = {
 local gfx <const> = playdate.graphics
 local file <const> = playdate.file
 
-local startingPage = 'Home'
+import 'CoreLibs/animation'
+
+local loadingPage = 'Apps'
 
 local MarkdownTree = import 'markdown-tree'
 
 -- local playout = import '../playout/playout'
 __ = import 'underscore'
+log = import "log"
 
 local styles = import 'styles'
 
@@ -24,7 +27,7 @@ local pages = {}
 local history = {}
 
 local pointer
-local pointerPos = nil
+local pointerPos = { x = 0, y = 0 }
 local pointerTimer
 local pageTimer
 local selected
@@ -40,43 +43,68 @@ local previousCrankOffset = 0
 local skipScrollTicks = 0
 -- The scroll offset
 local offset = 0
+local previousOffset = offset
 -- The crank change sinice last update
 local crankChange = 0
 
 local MODES = {
-  READING = "1",
-  TABBING = "2"
+  READING = 1,
+  TABBING = 2,
+  LOADING = 3
 }
 
-local currentMode = MODES.TABBING
+local currentMode = MODES.LOADING
 
+local loaderAnimation
+
+local scrollButtonOffsetChange = 0
+
+local function changeMode(newMode)
+  local newModeName
+  for k, v in pairs(MODES) do
+    if v == newMode then
+      newModeName = k
+    end
+  end
+  log.info('MODE CHANGE: ' .. newModeName)
+  currentMode = newMode
+end
 
 local function setPointerPos()
+  log.info('setPointerPos')
   if #currentPage.tree.tabIndex == 0 or currentMode == MODES.READING then
     pointer:remove()
+    log.info('pointer:remove()')
     return
   end
 
+  log.info('pointer:add()')
   pointer:add()
 
   selected = currentPage.tree.tabIndex[selectedIndex]
   local currentPageRect = currentPage.treeSprite:getBoundsRect()
 
-  pointerPos = getRectAnchor(selected.rect, playout.kAnchorCenterLeft):offsetBy(getRectAnchor(currentPageRect,
+  local newPointerPos = getRectAnchor(selected.rect, playout.kAnchorCenterLeft):offsetBy(getRectAnchor(currentPageRect,
     playout.kAnchorTopLeft):unpack())
-  print(pointerPos)
-  if pointerPos.y < 15 and pointerPos.y > -240 then
-    local moveY  = pointerPos.y - 15
-    offset       = offset - moveY
-    pointerPos.y = 15
-  elseif pointerPos.y > 230 and pointerPos.y < 480 then
-    local moveY  = pointerPos.y - 230
-    offset       = offset - moveY
-    pointerPos.y = 230
+
+  if newPointerPos.y < 15 and newPointerPos.y > -240 then
+    local moveY     = newPointerPos.y - 15
+    offset          = offset - moveY
+    newPointerPos.y = 15
+  elseif newPointerPos.y > 230 and newPointerPos.y < 480 then
+    local moveY     = newPointerPos.y - 230
+    offset          = offset - moveY
+    newPointerPos.y = 230
+  end
+
+  if newPointerPos.y > 0 and newPointerPos.y < 240 then
+    pointerPos = newPointerPos
+    log.info('pointerPos', pointerPos)
   end
 end
 
 local function retargetPointer()
+  log.info('retargetPointer')
   local currentPageRect = currentPage.treeSprite:getBoundsRect()
   for i = 1, #currentPage.tree.tabIndex do
     local tab = currentPage.tree.tabIndex[i]
@@ -85,7 +113,8 @@ local function retargetPointer()
     -- we have a tab in viewable range
     if tabPos.y > 10 and tabPos.y < 230 then
       selectedIndex = i
-      currentMode = MODES.TABBING
+      changeMode(MODES.TABBING)
+      log.info('tab found, selectedIndex:', selectedIndex)
       break;
     end
   end
@@ -109,10 +138,11 @@ local function prevTabItem()
 end
 
 local function clickLink()
+  log.info('clickLink')
   table.insert(history, { name = currentPage.name, offset = offset, selectedIndex = selectedIndex })
   local selected = currentPage.tree.tabIndex[selectedIndex]
   local linkTarget = selected.properties.target
-  gfx.clear()
+  -- gfx.clear()
 
   if linkTarget:sub(1, 1) == '#' then
     local targetId = linkTarget:sub(2, #linkTarget)
@@ -124,22 +154,61 @@ local function clickLink()
     local targetPos       = getRectAnchor(target.rect, playout.kAnchorTopLeft):offsetBy(getRectAnchor(currentPageRect,
       playout.kAnchorTopLeft):unpack())
     offset                = offset - targetPos.y
+    changeMode(MODES.READING)
+    setPointerPos()
   else
+    changeMode(MODES.LOADING)
     currentPage.treeSprite:remove()
-    currentPage = pages[linkTarget]:build()
-    selectedIndex = 1
-    offset = 0
+
+    loadingPage = linkTarget
+    BuildTreeRoutine = coroutine.create(function(pageTree)
+      pageTree:build(function(page)
+        currentPage = page
+        selectedIndex = 1
+        offset = 0
+        changeMode(MODES.READING)
+        setPointerPos()
+      end)
+    end)
   end
-  currentMode = MODES.READING
-  setPointerPos()
 end
 
 local inputHandlers = {
-  rightButtonDown = nextTabItem,
-  downButtonDown = nextTabItem,
-  leftButtonDown = prevTabItem,
-  upButtonDown = prevTabItem,
-  AButtonDown = function()
+  rightButtonDown = function()
+    if currentMode == MODES.TABBING then
+      return nextTabItem()
+    end
+  end,
+  downButtonDown  = function()
+    if currentMode == MODES.TABBING then
+      return nextTabItem()
+    elseif currentMode == MODES.READING then
+      scrollButtonOffsetChange = -5
+    end
+  end,
+  downButtonUp    = function()
+    if currentMode == MODES.READING then
+      scrollButtonOffsetChange = 0
+    end
+  end,
+  leftButtonDown  = function()
+    if currentMode == MODES.TABBING then
+      return prevTabItem()
+    end
+  end,
+  upButtonDown    = function()
+    if currentMode == MODES.TABBING then
+      return prevTabItem()
+    elseif currentMode == MODES.READING then
+      scrollButtonOffsetChange = 5
+    end
+  end,
+  upButtonUp      = function()
+    if currentMode == MODES.READING then
+      scrollButtonOffsetChange = 0
+    end
+  end,
+  AButtonDown     = function()
     -- if we hit A while in reading mode then tab to the first link in the currently viewable content
     if currentMode == MODES.READING then
       retargetPointer()
@@ -147,24 +216,39 @@ local inputHandlers = {
       clickLink()
     end
   end,
-  BButtonDown = function()
+  BButtonDown     = function()
     if currentMode == MODES.TABBING then
-      currentMode = MODES.READING
+      changeMode(MODES.READING)
       setPointerPos()
     elseif currentMode == MODES.READING then
       if #history > 0 then
-        local linkTarget = table.remove(history, #history)
-        currentPage.treeSprite:remove()
-        gfx.clear()
-        currentPage = pages[linkTarget.name]:build()
-        selectedIndex = linkTarget.selectedIndex
-        offset = linkTarget.offset
-        currentMode = MODES.TABBING
-        setPointerPos()
+        local targetTree = table.remove(history, #history)
+        loadingPage = targetTree.name
+        if currentPage.name == loadingPage then
+          offset = targetTree.offset
+          changeMode(MODES.TABBING)
+          currentPage:update(crankChange, offset)
+          setPointerPos()
+        else
+          currentPage.treeSprite:remove()
+          -- gfx.clear()
+          changeMode(MODES.LOADING)
+          BuildTreeRoutine = coroutine.create(function(pageTree)
+            pageTree:build(function(page)
+              currentPage = page
+              selectedIndex = targetTree.selectedIndex
+              offset = targetTree.offset
+              if currentPage.name == 'Home' then
+                changeMode(MODES.TABBING)
+              end
+              setPointerPos()
+            end)
+          end)
+        end
       end
     end
   end,
-  cranked = function(change, acceleratedChange)
+  cranked         = function(change, acceleratedChange)
     crankChange = change
     if skipScrollTicks > 0 then
       skipScrollTicks = skipScrollTicks - 1
@@ -173,9 +257,54 @@ local inputHandlers = {
       offset = offset - change * CRANK_SCROLL_SPEED * crankSpeedModifier
       previousCrankOffset = change * CRANK_SCROLL_SPEED * crankSpeedModifier
     end
+    if currentMode == MODES.TABBING and pointerPos then
+      local offsetChange = offset - previousOffset
+      pointerPos.y = pointerPos.y + offsetChange
+      if pointerPos.y > 480 or pointerPos.y < -240 then
+        changeMode(MODES.READING)
+        setPointerPos()
+      end
+    end
     -- print('offset', offset)
   end
 }
+
+
+function buildPageAsync(linkTarget, callback)
+  local co = coroutine.create(pages[linkTarget].build)
+  local function exec(linkTarget, callback)
+    local ok, data = coroutine.resume(co, linkTarget, callback)
+    if not ok then
+      error(debug.traceback(co, data))
+    end
+    if coroutine.status(co) ~= "dead" then
+      data(exec)
+    end
+  end
+  exec(linkTarget, callback)
+end
+
+function buildPageAsync2(linkTarget, callback)
+  local co = coroutine.create(pages[linkTarget].build)
+  local function exec(linkTarget, callback)
+    local ok, data = coroutine.resume(co, linkTarget, callback)
+    if not ok then
+      error(debug.traceback(co, data))
+    end
+    if coroutine.status(co) ~= "dead" then
+      data(exec)
+    end
+  end
+  exec(linkTarget, callback)
+end
+
+function coroutine.xpcall(co)
+  local output = { coroutine.resume(co) }
+  if output[1] == false then
+    return false, output[2], debug.traceback(co)
+  end
+  return table.unpack(output)
+end
 
 local function init()
   print('Initialising. Checking folders ...')
@@ -200,49 +329,104 @@ local function init()
     pages[fileEntry.name] = page
   end)
 
-  currentPage = pages[startingPage]:build()
-  -- set to tabbing first since we are on the Home page
-  currentMode = MODES.READING
-
-  -- setup pointer
   local pointerImg = gfx.image.new("images/pointer")
   pointer = gfx.sprite.new(pointerImg)
   pointer:setRotation(90)
   pointer:setZIndex(1)
-  setPointerPos()
+
+  BuildTreeRoutine = coroutine.create(function(pageTree)
+    pageTree:build(function(page)
+      currentPage = page
+      changeMode(MODES.TABBING)
+      setPointerPos()
+      playdate.inputHandlers.push(inputHandlers)
+    end)
+  end)
+
+  -- set to tabbing first since we are on the Home page
+
+  -- setup pointer
+
+  -- setPointerPos()
 
   -- setup pointer animation
-  pointerTimer = playdate.timer.new(500, -18, -14, playdate.easingFunctions.inOutSine)
-  pointerTimer.repeats = true
-  pointerTimer.reverses = true
+  -- pointerTimer = playdate.timer.new(500, -18, -14, playdate.easingFunctions.inOutSine)
+  -- pointerTimer.repeats = true
+  -- pointerTimer.reverses = true
 
   -- setup page animation
-  pageTimer = playdate.timer.new(500, 400, 100, playdate.easingFunctions.outCubic)
-  pageTimer.timerEndedCallback = setPointerPos
+  -- pageTimer = playdate.timer.new(500, 400, 100, playdate.easingFunctions.outCubic)
+  -- pageTimer.timerEndedCallback = setPointerPos
 
   -- add input handlers
-  playdate.inputHandlers.push(inputHandlers)
+end
+
+-- Redefine the function with your own
+---@diagnostic disable-next-line: duplicate-set-field
+os = {}
+function os.date(format, time)
+  local time = playdate.getTime()
+  local f = {
+    Y = time.year,
+    m = time.month,
+    d = time.day,
+    H = time.hour,
+    M = time.minute,
+    S = time.second
+  }
+  local timeString = format:gsub("%%([a-zA-Z])", function(c)
+    return f[c]
+  end)
+
+  -- Call the original function
+  return timeString
 end
 
 function playdate.update()
-  print('offset', offset)
-  print('currentPage.treeSprite.height', currentPage.treeSprite.height)
-  if currentPage then
+  if currentMode == MODES.LOADING then
+    -- if buildRoutine then
+    --   buildRoutine.resume()
+    -- end
+    local status = coroutine.status(BuildTreeRoutine)
+    if status == "suspended" then
+      coroutine.resume(BuildTreeRoutine, pages[loadingPage])
+    elseif status == 'dead' then
+      print(coroutine.xpcall(BuildTreeRoutine))
+      local debug
+    end
+    loaderAnimation:draw(0, 0)
+    local loadingText = 'Loading ' .. loadingPage .. ' ...'
+    gfx.drawTextAligned(loadingText, 200, 200, kTextAlignment.center)
+  else
+    offset = offset + scrollButtonOffsetChange
+    -- local offsetChange
     if offset > 0 then
+      pointerPos.y = pointerPos.y - offset
       offset = 0
+      -- offsetChange = -offset
     elseif offset < -currentPage.treeSprite.height + 150 then
-      offset = -currentPage.treeSprite.height + 150
+      local newOffset = -currentPage.treeSprite.height + 150
+      local offsetChange = -offset + newOffset
+      pointerPos.y = pointerPos.y + offsetChange
+      offset = newOffset
     end
     currentPage:update(crankChange, offset)
 
-    if pointerPos then
-      pointerPos:offsetBy(pointerTimer.value, 0)
+    if currentMode == MODES.TABBING and pointerPos then
+      -- pointerPos:offsetBy(pointerTimer.value, 0)
+      local offsetChange = offset - previousOffset
       pointer:moveTo(pointerPos.x, pointerPos.y)
       pointer:update()
     end
+
+    previousOffset = offset
   end
+
   playdate.timer.updateTimers()
   playdate.drawFPS()
 end
+
+local loaderImgTbl = gfx.imagetable.new('images/book_animation.gif')
+loaderAnimation = gfx.animation.loop.new(50, loaderImgTbl, true)
 
 init()

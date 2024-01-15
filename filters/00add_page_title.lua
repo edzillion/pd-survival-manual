@@ -1,6 +1,9 @@
 function Pandoc(doc)
+  print(PANDOC_STATE.input_files[1])
   local titleWords = {}
-  for word in PANDOC_STATE.input_files[1]:match("(.+)%..+"):gmatch("([A-Z][a-z]+)") do
+  local filename = PANDOC_STATE.input_files[1]:match(".+/([^/]+)$"):match("(.+)%..+")
+
+  for word in filename:gmatch("([A-Z][a-z]+)") do
     table.insert(titleWords, word)
   end
   local h1 = pandoc.Header(1, table.concat(titleWords, ' '))

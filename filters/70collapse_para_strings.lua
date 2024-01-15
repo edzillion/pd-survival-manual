@@ -1,8 +1,19 @@
 function Para(elem)
   local text = ''
   local contentTable = {}
+
   for i = 1, #elem.content do
-    if elem.content[i].t == 'Str' then
+    if elem.content[i].t == 'RawInline' then
+      if elem.content[i].text:sub(1, 6) == '<font ' then
+        table.insert(contentTable, elem.content[i])
+      elseif elem.content[i].text:sub(1, 7) == '</font>' then
+        if text ~= '' then
+          table.insert(contentTable, pandoc.Str(text))
+          text = ''
+        end
+        table.insert(contentTable, elem.content[i])
+      end
+    elseif elem.content[i].t == 'Str' then
       text = text .. elem.content[i].text
     elseif elem.content[i].t == 'Space' then
       text = text .. ' '
@@ -26,7 +37,7 @@ function Para(elem)
     end
   end
   if text ~= '' then
-    table.insert(contentTable, pandoc.Str(text))    
+    table.insert(contentTable, pandoc.Str(text))
   end
   if #contentTable > 0 then
     elem.content = contentTable

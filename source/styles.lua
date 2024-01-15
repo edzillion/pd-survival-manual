@@ -23,56 +23,78 @@ local UWttyp0FontFamily = {
 }
 
 local leggieFontFamily = {
-  [playdate.graphics.font.kVariantNormal] = 'fonts/leggie/leggie-18',
-  [playdate.graphics.font.kVariantBold] = 'fonts/leggie/leggie-18b',
-  [playdate.graphics.font.kVariantItalic] = 'fonts/leggie/leggie-18bi'
+  [playdate.graphics.font.kVariantNormal] = 'fonts/leggie/leggie-24',
+  [playdate.graphics.font.kVariantBold] = 'fonts/leggie/leggie-24b',
+  [playdate.graphics.font.kVariantItalic] = 'fonts/leggie/leggie-24i'
+}
+
+local lucidiaFontFamily = {
+  [playdate.graphics.font.kVariantNormal] = 'fonts/lucidia/lucidia-16x30',
+  [playdate.graphics.font.kVariantBold] = 'fonts/lucidia/lucidia-16x30b',
 }
 
 
 local styles = {
-  Header1 = {
-    padding = 12,
-    backgroundColor = playdate.graphics.kColorBlack,
-    backgroundAlpha = 7 / 8,
-    borderLeft = 2,
-    font = playdate.graphics.font.new('fonts/emerald_20')
-  },
-
-  Header3 = {
-    padding = 12,
-    backgroundColor = playdate.graphics.kColorBlack,
-    backgroundAlpha = 7 / 8,
-    border = 2,
-    font = playdate.graphics.font.new('fonts/emerald_17')
-  },
-
   BlockQuote = {
-    paddingLeft = 25,
-    backgroundColor = playdate.graphics.kColorWhite,
     borderLeft = 10,
-    borderBottom = 2,
-    borderTop = 2,
-    borderRight = 2,
+    paddingLeft = 20,
+    spacing = 12,
+    fontFamily = playdate.graphics.font.newFamily(leggieFontFamily),
+  },
+  BulletList = {
+    hAlign = playout.kAlignStart,
+    spacing = 6,
     fontFamily = playdate.graphics.font.newFamily(leggieFontFamily)
   },
+  Header1 = {
+    padding = 10,
+    backgroundColor = playdate.graphics.kColorBlack,
+    -- backgroundAlpha = 2 / 8,
+    color = playdate.graphics.kColorWhite,
 
+    font = playdate.graphics.font.new(lucidiaFontFamily[playdate.graphics.font.kVariantBold])
+  },
+  Header2 = {
+    padding = 10,
+    backgroundAlpha = 2 / 8,
+    border = 4,
+    color = playdate.graphics.kColorWhite,
+    backgroundColor = playdate.graphics.kColorBlack,
+    font = playdate.graphics.font.new(lucidiaFontFamily[playdate.graphics.font.kVariantBold])
+  },
+  Header3 = {
+    paddingLeft = 10,
+    paddingRight = 6,
+    paddingTop = 6,
+    paddingBottom = 6,
+    color = playdate.graphics.kColorWhite,
+    backgroundColor = playdate.graphics.kColorBlack,
+    backgroundAlpha = 3 / 8,
+    border = 2,
+    font = playdate.graphics.font.new(lucidiaFontFamily[playdate.graphics.font.kVariantNormal])
+  },
+  Header4 = {    
+    padding = 4,
+    backgroundColor = playdate.graphics.kColorBlack,
+    backgroundAlpha = 7 / 8,
+    border = 1,
+    font = playdate.graphics.font.new(leggieFontFamily[playdate.graphics.font.kVariantBold])
+  },
   Para = {
     spacing = 12,
-    paddingTop = 16,
-    paddingLeft = 20,
-    border = 1,
     fontFamily = playdate.graphics.font.newFamily(leggieFontFamily)
   },
-
   Root = {
-    maxWidth = 400,
+    width = 400,
     backgroundColor = playdate.graphics.kColorWhite,
     direction = playout.Vertical,
-    vAlign = playout.kAlignStretch,
+    hAlign = playout.kAlignStretch,
     scroll = 1,
     padding = 10,
-    spacing = 10
+    spacing = 8
   }
 }
 
+-- styles.BulletList = styles.Para
+styles.OrderedList = styles.BulletList
 return styles

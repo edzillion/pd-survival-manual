@@ -34,6 +34,8 @@ PANDOC_TO_PLAYOUT_VALS = {
   AlignDefault = playout.kAlignCenter
 }
 
+local buildCoroutine
+
 mdTree.new = function(styles, treeEntry)
   local mdt = {
     styles = styles,
@@ -45,8 +47,8 @@ mdTree.new = function(styles, treeEntry)
   return tree
 end
 
-function mdTreeMethods:build()
-  -- build tree
+function mdTreeMethods:build(callback)
+  log.info('Building Tree for ' .. self.treeData.name)
   self.tree = playout.tree:build(self, self.createTree, self.treeData)
   if settings.linksEnabled then
     self.tree:computeTabIndex()
@@ -58,7 +60,9 @@ function mdTreeMethods:build()
 
   self.treeSprite:moveTo(-anchor.x, -anchor.y)
   self.treeSprite:add()
-  return self
+  -- buildCoroutine = nil
+  log.info('Tree successfully built for ' .. self.treeData.name .. ', calling callback()')
+  callback(self)
 end
 
 function mdTreeMethods.createTree(self, ui, treeEntry)
@@ -75,145 +79,6 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
 
   local blockCounter = 1
 
-  print('creating tree for ' .. treeEntry.name)
-
-  -- __.each(treeEntry.json.blocks, function(block)
-  --   blockCounter = blockCounter + 1
-  --   print(blockCounter, block.t)
-
-  --   if block.t == 'BlockQuote' then
-  --     local boxNode = box(self.styles[block.t] or nil)
-  --     __.each(block.c, function(subBlock)
-  --       if subBlock.t == 'Para' or subBlock.t == 'Plain' then
-  --         for i = 1, #subBlock.c do
-  --           if subBlock.c[i].t == 'Str' then
-  --             local textNode = text(subBlock.c[i].c)
-  --             boxNode:appendChild(textNode)
-  --           end
-  --         end
-  --       end
-  --     end)
-  --     root:appendChild(boxNode)
-  --     lastBlock = 'BlockQuote'
-  --     lastNode = boxNode
-  --   elseif block.t == 'Plain' then
-  --     if lastBlock ~= 'Plain' then
-  --       local boxNode = box(self.styles[block.t] or nil)
-  --       for i = 1, #block.c do
-  --         if block.c[i].t == 'Str' then
-  --           local textNode = text(block.c[i].c)
-  --           boxNode:appendChild(textNode)
-  --         end
-  --       end
-  --       root:appendChild(boxNode)
-  --       lastBlock = 'Plain'
-  --       lastNode = boxNode
-  --     else
-  --       for i = 1, #block.c do
-  --         if block.c[i].t == 'Str' then
-  --           local textNode = text(block.c[i].c)
-  --           lastNode:appendChild(textNode)
-  --         end
-  --       end
-  --     end
-  --   elseif block.t == 'Para' then
-  --     if lastBlock ~= 'Para' then
-  --       local boxNode = box(self.styles[block.t] or nil)
-  --       for i = 1, #block.c do
-  --         if block.c[i].t == 'Str' then
-  --           local textNode = text(block.c[i].c)
-  --           boxNode:appendChild(textNode)
-  --           root:appendChild(boxNode)
-  --           lastBlock = 'Para'
-  --           lastNode = boxNode
-  --         elseif block.c[i].t == 'RawInline' then
-  --           if block.c[i].c[1] == 'html' and block.c[i].c[2]:sub(1, 3) == '<a ' then
-  --             table.insert(anchors, block.c[i].c[2])
-  --           elseif block.c[i].c[2] == '</a>' then
-  --             --end anchor
-  --           else
-  --             local debug
-  --           end
-  --         elseif block.c[i].t == 'Image' then
-  --           local imgPath = block.c[i].c[3][1]
-  --           local img = gfx.image.new(imgPath)
-  --           local imageBlock = image(img)
-  --           boxNode:appendChild(imageBlock)
-  --         elseif block.c[i].t == 'Link' then
-  --           local strings = __.pluck(block.c[i].c[2], 'c')
-  --           local linkText = __.join(strings, ' ')
-  --           local linkLocation = block.c[i].c[3][1]
-  --           table.insert(links, { text = linkText, location = linkLocation })
-  --           boxNode:appendChild(text(linkText))
-  --           root:appendChild(boxNode)
-  --           lastBlock = 'Para'
-  --           lastNode = boxNode
-  --         else
-  --           local d
-  --         end
-  --       end
-  --       -- boxNode:appendChild(textNode)
-  --       -- root:appendChild(boxNode)
-  --       -- lastBlock = 'Para'
-  --       -- lastNode = boxNode
-  --     else
-  --       for i = 1, #block.c do
-  --         if block.c[i].t == 'Str' then
-  --           local textNode = text(block.c[i].c)
-  --           lastNode:appendChild(textNode)
-  --         elseif block.c[i].t == 'Link' then
-  --           local strings = __.pluck(block.c[i].c[2], 'c')
-  --           local linkText = __.join(strings, ' ')
-  --           local linkLocation = block.c[i].c[3][1]
-  --           table.insert(links, { text = linkText, location = linkLocation })
-  --           lastNode.children[#lastNode.children].text = lastNode.children[#lastNode.children].text .. linkText
-  --         end
-  --       end
-  --     end
-  --   elseif block.t == 'Header' then
-  --     local headerStyle = block.t .. block.c[1] --Header1, Header2 etc.
-  --     local boxNode = box(self.styles[headerStyle] or nil)
-  --     if block.c[3][1].t == 'Link' then
-  --       local strings = __.pluck(block.c[3][1].c[2], 'c')
-  --       local linkText = __.join(strings, ' ')
-  --       local linkLocation = block.c[3][1].c[3][1]
-  --       table.insert(links, { text = linkText, location = linkLocation })
-  --       boxNode:appendChild(text(linkText, { target = linkLocation, tabIndex = #links }))
-  --       root:appendChild(boxNode)
-  --     elseif block.c[3][1].t == 'Str' then
-  --       local textNode = text(block.c[3][1].c)
-  --       boxNode:appendChild(textNode)
-  --       root:appendChild(boxNode)
-  --       lastBlock = 'Header'
-  --       lastNode = boxNode
-  --     end
-  --   elseif block.t == 'Image' then
-  --     local debug
-  --     lastBlock = 'Image'
-  --     --lastNode = boxNode
-  --   elseif block.t == 'BulletList' then
-  --     local boxNode = box(self.styles[block.t] or nil)
-  --     local listItems = {}
-  --     for i = 1, #block.c do
-  --       for j = 1, #block.c[i] do
-  --         if block.c[i][j].t == 'Plain' then
-  --           for k = 1, #block.c[i][j].c do
-  --             if block.c[i][j].c[k].t == 'Str' then
-  --               table.insert(listItems, block.c[i][j].c[k].c)
-  --             end
-  --           end
-  --         end
-  --       end
-  --     end
-  --     local textNode = text(__.join(listItems, '\n'))
-  --     boxNode:appendChild(textNode)
-  --     root:appendChild(boxNode)
-  --     lastBlock = 'BulletList'
-  --     lastNode = boxNode
-  --   end
-  -- end)
-
-
   local function hexToGrey(hex_string)
     -- Convert hex to RGB
     local r = tonumber(string.sub(hex_string, 2, 3), 16)
@@ -226,9 +91,17 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
     return gray
   end
 
+  local parseNode = function(node)
+    log.info('Parsing node ' .. node.t)
+    local n = parseFunctions[node.t](node)
+    coroutine.yield(BuildTreeRoutine)
+    return n
+  end
+
   local parseAndAddToTree = function(block, boxNode)
-    local nodeToAdd = parseFunctions[block.t](block)
+    local nodeToAdd = parseNode(block)
     if nodeToAdd ~= nil then
+      log.info('Adding node ' .. block.t)
       boxNode:appendChild(nodeToAdd)
     end
     return boxNode
@@ -244,23 +117,25 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
     end
     if properties.backgroundColor and properties.backgroundColor:sub(1, 1) == '#' then
       local grey = hexToGrey(properties.backgroundColor)
-      properties.backgroundColor = grey > 0.5 and gfx.kColorBlack or gfx.kColorWhite
+      properties.backgroundColor = grey > 0.5 and gfx.kColorWhite or gfx.kColorBlack
       properties.backgroundAlpha = grey > 0.5 and 1 - grey or grey
+    end
+    if properties.color and properties.color:sub(1, 1) == '#' then
+      local grey = hexToGrey(properties.color)
+      properties.color = grey > 0.5 and gfx.kColorWhite or gfx.kColorBlack
     end
     return properties
   end
-
-
 
   local tableNode
   local tableRowNode
   local tableColNode
   local lastNode
-  local tableBuffer = {}
+  local tableProps
+  local textProps
 
   parseFunctions = {
     BlockQuote = function(blockQuote)
-      print('BlockQuote')
       local boxNode = box(self.styles[blockQuote.t] or nil)
       __.each(blockQuote.c, function(subBlock)
         boxNode = parseAndAddToTree(subBlock, boxNode)
@@ -268,18 +143,21 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       return boxNode
     end,
     BulletList = function(bulletList)
-      print('BulletList')
-      if countcounter == 14 then
-        local d
-      end
-      local boxNode = box(self.styles[bulletList.t] or nil)
+      local st = self.styles[bulletList.t]
+
+      local boxNode = box(st or nil)
 
       local listItems = {}
       local listString = ''
       for i = 1, #bulletList.c do
         for j = 1, #bulletList.c[i] do
-          local bl = bulletList.c[i][j]
-          boxNode = parseAndAddToTree(bl, boxNode)
+          local block = bulletList.c[i][j]
+          local nodeToAdd = parseNode(block)
+          if nodeToAdd ~= nil then
+            table.insert(listItems, nodeToAdd)
+          end
+
+          -- boxNode = parseAndAddToTree(bl, boxNode)
           -- table.insert(listItems, )
           -- if block.c[i][j].t == 'Plain' then
           --   for k = 1, #block.c[i][j].c do
@@ -290,18 +168,27 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
           -- end
         end
       end
-      local listStrings = __.reduce(boxNode.children, {}, function(memo, node)
+
+
+      local listTextBuffer = ''
+      __.each(listItems, function(node)
         __.each(node.children, function(subNode)
-          if subNode.properties.tabIndex ~= nil then
+          if subNode.properties.tabIndex == nil then
+            listTextBuffer = listTextBuffer .. subNode.text
+          else
             if subNode.properties.target:sub(1, 8) == 'https://' or
                 subNode.properties.target:sub(1, 7) == 'http://' then
               -- external link, just print it's url string
-              local textnow = memo[#memo] .. subNode.text .. ' (' .. subNode.properties.target .. ')'
-              memo[#memo] = textnow
+              listTextBuffer = listTextBuffer .. subNode.text .. ' (' .. subNode.properties.target .. ')'
+            else
+              subNode.text = listTextBuffer .. subNode.text
+              boxNode:appendChild(subNode)
+              listTextBuffer = ''
+              -- table.insert(links, { text = linkText, location = linkLocation })
+              -- local textNode = text(linkText, { target = linkLocation, tabIndex = #links })
             end
+
             local debug
-          else
-            table.insert(memo, subNode.text)
           end
           -- if memo[#memo] and memo[#memo].text and subNode.text then
           --   memo[#memo].text = memo[#memo].text .. subNode.text .. '\n'
@@ -310,11 +197,21 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
           -- else
           --   local debug
           -- end
+          -- if listTextBuffer ~= '' then
+          --   listTextBuffer = listTextBuffer .. '\n'
+          -- end
         end)
-        return memo
+        if listTextBuffer ~= '' then
+          listTextBuffer = listTextBuffer .. '\n'
+        end
+        local debug
       end)
-      -- local listItemString = __.join(mapped, '\n')
-      boxNode.children = { text(__.join(listStrings, '\n')) }
+
+      if listTextBuffer ~= '' then
+        boxNode:appendChild(text(listTextBuffer))
+        -- local listItemString = __.join(mapped, '\n')
+        -- boxNode.children = { text(__.join(listStrings, '\n')) }
+      end
 
       if tableColNode ~= nil then
         tableColNode:appendChild(boxNode)
@@ -323,23 +220,27 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       end
     end,
     Header = function(header)
-      print('Header')
-      local headerStyle = header.t .. header.c[1] --Header1, Header2 etc.
-      local boxNode = box(self.styles[headerStyle] or nil)
+      local headerStyleName = header.t .. header.c[1] --Header1, Header2 etc.
+      local headerStyle = self.styles[headerStyleName] or nil
+      local boxNode = box(headerStyle)
+
+      if header.c[2][1] ~= nil and string.len(header.c[2][1]) > 0 then
+        --has an anchor
+        boxNode.properties.id = header.c[2][1]
+      end
+
       return parseAndAddToTree(header.c[3][1], boxNode)
     end,
     HorizontalRule = function(horizR)
       return box({ width = 380, height = 3, borderTop = 3 })
     end,
     Image = function(img)
-      print('Image')
       local imgPath = img.c[3][1]
       local img = gfx.image.new(imgPath)
       local imageBlock = image(img)
       return imageBlock
     end,
     Link = function(link)
-      print('Link')
       local strings = __.pluck(link.c[2], 'c')
       local linkText = __.join(strings, ' ')
       local linkLocation = link.c[3][1]
@@ -350,15 +251,21 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       -- root:appendChild(boxNode)
     end,
     OrderedList = function(ordList)
-      print('OrderedList')
       local boxNode = box(self.styles[ordList.t] or nil)
-
-      local listItems = {}
-      local listString = ''
 
       local listStart = ordList.c[1][1]
       local listStyle = ordList.c[1][2].t
-      local liotDelim = ordList.c[1][3].t
+      local listDelim = ordList.c[1][3].t
+
+      local function addDelim(listNum, listDelim)
+        if listDelim == 'DefaultDelim' or listDelim == 'Period' then
+          return listNum .. '.'
+        elseif listDelim == 'OneParen' then
+          return listNum .. '(' .. listNum .. ')'
+        elseif listDelim == 'TwoParens' then
+          return listNum .. '((' .. listNum .. '))'
+        end
+      end
 
       for i = 1, #ordList.c[2] do
         boxNode = parseAndAddToTree(ordList.c[2][i][1], boxNode)
@@ -371,7 +278,7 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
         --   end
         -- end
       end
-      local ordCounter = 1
+      local ordCounter = listStart
 
       local listStrings = __.reduce(boxNode.children, {}, function(memo, node)
         __.each(node.children, function(subNode)
@@ -382,9 +289,8 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
               local textnow = memo[#memo] .. subNode.text .. ' (' .. subNode.properties.target .. ')'
               memo[#memo] = textnow
             end
-            local debug
           else
-            table.insert(memo, ordCounter .. '.' .. subNode.text)
+            table.insert(memo, addDelim(ordCounter, listDelim) .. subNode.text)
             ordCounter = ordCounter + 1
           end
           -- if memo[#memo] and memo[#memo].text and subNode.text then
@@ -407,12 +313,11 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       end
     end,
     Para = function(para)
-      print('Para')
       local boxNode = box(self.styles[para.t] or nil)
       -- local nodesToAdd = {}
       -- local textNode
       __.each(para.c, function(subBlock)
-        local node = parseFunctions[subBlock.t](subBlock)
+        local node = parseNode(subBlock)
         boxNode:appendChild(node)
       end)
       -- if __.any(boxNode.children, function(child) return child.properties.tabIndex ~= nil end) then
@@ -422,13 +327,15 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       --   boxNode.children =
       -- end
       if tableColNode ~= nil then
+        for k, v in pairs(tableProps) do
+          boxNode.properties[k] = v
+        end
         tableColNode:appendChild(boxNode)
       else
         return boxNode
       end
     end,
     Plain = function(plain)
-      print('Plain')
       local boxNode = box(self.styles[plain.t] or nil)
       __.each(plain.c, function(subBlock)
         boxNode = parseAndAddToTree(subBlock, boxNode)
@@ -436,7 +343,10 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       return boxNode
     end,
     Str = function(str)
-      local textNode = text(str.c)
+      if str.c:sub(1, 5) == '{#toc' then
+        return
+      end
+      local textNode = text(str.c, textProps or nil)
       return textNode
       -- boxNode:appendChild(textNode)
       -- root:appendChild(boxNode)
@@ -446,8 +356,6 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
     RawBlock = function(rawB)
       if rawB.c[1] == 'html' then
         if rawB.c[2]:sub(1, 6) == '<table' then
-          print('Table')
-
           local props = extractProps(rawB.c[2])
           tableNode = box(self.styles.Table or props or nil)
           return tableNode
@@ -457,8 +365,7 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
           tableColNode = nil
         elseif rawB.c[2]:match('^<%/?t[hrd]') then
           local tableTag = rawB.c[2]
-          local props = extractProps(rawB.c[2])
-          print('parsing ' .. tableTag)
+          tableProps = extractProps(rawB.c[2]) or nil
           local node = box(props or nil)
           if tableTag:sub(1, 3) == '<tr' then
             -- table.insert(tableBuffer[#tableBuffer].children, node)
@@ -487,13 +394,16 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
         boxNode.properties.id = rawI.c[2]:match('<a%s+name%s-=%s-"(.-)"')
       elseif rawI.c[2] == '</a>' then
         --end anchor
+      elseif rawI.c[2]:sub(1, 11) == '<font color' then
+        textProps = extractProps(rawI.c[2])
+      elseif rawI.c[2] == '</font>' then
+        textProps = nil
       else
         boxNode = parseAndAddToTree(rawI, boxNode)
       end
       return boxNode
     end,
     Table = function(pandocTable)
-      print('Table')
       local attr = pandocTable.c[1]
       local boxNode = box(self.styles.Table or { maxWidth = 380 })
 
@@ -547,7 +457,7 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
             rowNode:appendChild(cellNode)
 
             -- for k = 1, #cellContents do
-            --   local node = parseFunctions[cellContents[k].t](cellContents[k])
+            --   local node = parseNode(cellContents[k])
             --   for key, val in pairs(colProps[k]) do
             --     node.properties[key] = val
             --   end
@@ -597,7 +507,7 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
               -- end
               -- for k = 1, #cellContents do
 
-              --   local node = parseFunctions[cellContents[k].t](cellContents[k])
+              --   local node = parseNode(cellContents[k])
 
               --   -- TODO: merge props here from colProps
               --   row:appendChild(node)
@@ -613,36 +523,38 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
   }
 
   countcounter = 0
+
+  log.info('walking tree...')
   local function walkTree(treeNodes)
     for i = 1, #treeNodes do
       countcounter = i
       local node = treeNodes[i]
-      print(i, node.t)
-      lastNode = parseFunctions[node.t](node)
-      if lastNode then
+      lastNode = parseNode(node)
+
+      if lastNode and #lastNode.children > 0 then
+        log.info('Adding top level node ' .. node.t .. ' at ' .. i)
         root:appendChild(lastNode)
       end
     end
   end
 
   walkTree(treeEntry.json.blocks)
-
   return root
 end
 
 function mdTreeMethods:update(crankChange, offset)
-  if crankChange ~= 0 or offset ~= 0 then
-    local treePosition = { x = self.treeSprite.x, y = self.treeSprite.y }
-    if self.tree.scrollTarget then
-      if self.tree.scrollTarget.properties.direction == playout.kDirectionHorizontal then
-        treePosition.x = (self.treeSprite.width / 2) + offset
-      else
-        treePosition.y = (self.treeSprite.height / 2) + offset
-      end
+  -- if crankChange ~= 0 or offset ~= 0 then
+  local treePosition = { x = self.treeSprite.x, y = self.treeSprite.y }
+  if self.tree.scrollTarget then
+    if self.tree.scrollTarget.properties.direction == playout.kDirectionHorizontal then
+      treePosition.x = (self.treeSprite.width / 2) + offset
+    else
+      treePosition.y = (self.treeSprite.height / 2) + offset
     end
-
-    self.treeSprite:moveTo(treePosition.x, treePosition.y)
   end
+
+  self.treeSprite:moveTo(treePosition.x, treePosition.y)
+  -- end
   self.treeSprite:update()
 
   playdate.timer.updateTimers()

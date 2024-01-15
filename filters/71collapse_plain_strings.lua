@@ -9,7 +9,8 @@ function Plain(elem)
     elseif elem.content[i].t == 'SoftBreak' then
       text = text .. '\n'
     elseif elem.content[i].t == 'Link' then
-      if elem.content[i].target:sub(1, 8) == 'https://' then
+      if elem.content[i].target:sub(1, 8) == 'https://'
+          or elem.content[i].target:sub(1, 8) == 'http://' then
         for j = 1, #elem.content[i].content do
           if elem.content[i].content[j].t == 'Str' then
             text = text .. elem.content[i].content[j].text
@@ -26,7 +27,7 @@ function Plain(elem)
     end
   end
   if text ~= '' then
-    table.insert(contentTable, pandoc.Str(text))    
+    table.insert(contentTable, pandoc.Str(text))
   end
   if #contentTable > 0 then
     elem.content = contentTable

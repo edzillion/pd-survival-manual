@@ -49,3 +49,5 @@ luac.out
 /source/fonts
 /source/images
 /source/json
+/source/playout.lua
+/temp

@@ -9,7 +9,7 @@ const FILTER_FOLDER = "filters";
 const MARKDOWN_FOLDER = "SurvivalManual.wiki";
 const OUTPUT_FOLDER = "source/json";
 
-const MAX_IMAGE_DIMENSIONS = { x: 400, y: 1200 };
+const MAX_IMAGE_DIMENSIONS = { x: 380, y: 1200 };
 
 console.info("Starting convert_and_move_files.js script, checking folders ...");
 
@@ -88,7 +88,7 @@ mdFiles.forEach(function (filename) {
 		"/" +
 		name +
 		".json";
-
+  console.log(args)
 	convertArgs.push({ src: src, args: args });
 });
 
@@ -122,7 +122,6 @@ async function processFiles() {
 
 	filesToMerge = filesToMerge.filter((files) => {
 		var file = fs.readFileSync(files[0], "utf8");
-		console.log(file.trim());
 		if (file.trim() == "**TABLE OF CONTENTS**") {
 			copyFiles.push(files[0].substring(9));
 			return false;

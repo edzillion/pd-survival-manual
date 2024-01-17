@@ -94,7 +94,9 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
   local parseNode = function(node)
     log.info('Parsing node ' .. node.t)
     local n = parseFunctions[node.t](node)
-    coroutine.yield(BuildTreeRoutine)
+    if useCoroutines then
+      coroutine.yield(rootElementCounter)
+    end
     return n
   end
 
@@ -105,6 +107,13 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       boxNode:appendChild(nodeToAdd)
     end
     return boxNode
+  end
+
+  local mergeNodeProps = function(node, props)
+    for k, v in pairs(props) do
+      node.properties[k] = v
+    end
+    return node
   end
 
   local function extractProps(tagString)
@@ -131,14 +140,22 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
   local tableRowNode
   local tableColNode
   local lastNode
-  local tableProps
+  local tagProps
   local textProps
+  local indentWithStars
+  local bulletListItems = {}
+  local bulletListDepth = 0
 
   parseFunctions = {
     BlockQuote = function(blockQuote)
       local boxNode = box(self.styles[blockQuote.t] or nil)
       __.each(blockQuote.c, function(subBlock)
-        boxNode = parseAndAddToTree(subBlock, boxNode)
+        local nodeToAdd = parseNode(subBlock)
+        if nodeToAdd ~= nil then
+          nodeToAdd = mergeNodeProps(nodeToAdd, self.styles.BlockQuoteContent)
+          log.info('Adding node ' .. subBlock.t)
+          boxNode:appendChild(nodeToAdd)
+        end
       end)
       return boxNode
     end,
@@ -146,16 +163,28 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       local st = self.styles[bulletList.t]
 
       local boxNode = box(st or nil)
+      bulletListDepth = bulletListDepth + 1
+      if indentWithStars ~= nil then
+        indentWithStars = ' ' .. indentWithStars
+      else
+        indentWithStars = '** '
+      end
 
-      local listItems = {}
       local listString = ''
       for i = 1, #bulletList.c do
+        print('enter', bulletListDepth)
         for j = 1, #bulletList.c[i] do
           local block = bulletList.c[i][j]
           local nodeToAdd = parseNode(block)
           if nodeToAdd ~= nil then
-            table.insert(listItems, nodeToAdd)
+            if block.t == 'Plain' then
+              nodeToAdd.children[1].text = indentWithStars .. nodeToAdd.children[1].text
+            elseif block.t == 'Link' then
+              local debug
+            end
+            table.insert(bulletListItems, nodeToAdd)
           end
+
 
           -- boxNode = parseAndAddToTree(bl, boxNode)
           -- table.insert(listItems, )
@@ -169,49 +198,53 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
         end
       end
 
+      indentWithStars = indentWithStars:sub(2, #indentWithStars)
 
-      local listTextBuffer = ''
-      __.each(listItems, function(node)
-        __.each(node.children, function(subNode)
-          if subNode.properties.tabIndex == nil then
-            listTextBuffer = listTextBuffer .. subNode.text
-          else
-            if subNode.properties.target:sub(1, 8) == 'https://' or
-                subNode.properties.target:sub(1, 7) == 'http://' then
-              -- external link, just print it's url string
-              listTextBuffer = listTextBuffer .. subNode.text .. ' (' .. subNode.properties.target .. ')'
+      if bulletListDepth == 1 then
+        local listTextBuffer = ''
+        __.each(bulletListItems, function(node)
+          __.each(node.children, function(subNode)
+            if subNode.properties.tabIndex == nil then
+              listTextBuffer = listTextBuffer .. subNode.text .. '\n'
             else
-              subNode.text = listTextBuffer .. subNode.text
-              boxNode:appendChild(subNode)
-              listTextBuffer = ''
-              -- table.insert(links, { text = linkText, location = linkLocation })
-              -- local textNode = text(linkText, { target = linkLocation, tabIndex = #links })
+              if subNode.properties.target:sub(1, 8) == 'https://' or
+                  subNode.properties.target:sub(1, 7) == 'http://' then
+                -- external link, just print it's url string
+                listTextBuffer = listTextBuffer .. subNode.text .. ' (' .. subNode.properties.target .. ')'
+              else
+                subNode.text = listTextBuffer .. subNode.text
+                boxNode:appendChild(subNode)
+                listTextBuffer = ''
+                -- table.insert(links, { text = linkText, location = linkLocation })
+                -- local textNode = text(linkText, { target = linkLocation, tabIndex = #links })
+              end
+
+              local debug
             end
+            -- if memo[#memo] and memo[#memo].text and subNode.text then
+            --   memo[#memo].text = memo[#memo].text .. subNode.text .. '\n'
+            -- elseif subNode.text then
 
-            local debug
-          end
-          -- if memo[#memo] and memo[#memo].text and subNode.text then
-          --   memo[#memo].text = memo[#memo].text .. subNode.text .. '\n'
-          -- elseif subNode.text then
-
-          -- else
-          --   local debug
-          -- end
+            -- else
+            --   local debug
+            -- end
+            -- if listTextBuffer ~= '' then
+            --   listTextBuffer = listTextBuffer .. '\n'
+            -- end
+          end)
           -- if listTextBuffer ~= '' then
           --   listTextBuffer = listTextBuffer .. '\n'
           -- end
+          local debug
         end)
-        if listTextBuffer ~= '' then
-          listTextBuffer = listTextBuffer .. '\n'
-        end
-        local debug
-      end)
-
-      if listTextBuffer ~= '' then
         boxNode:appendChild(text(listTextBuffer))
-        -- local listItemString = __.join(mapped, '\n')
-        -- boxNode.children = { text(__.join(listStrings, '\n')) }
+        bulletListItems = {}
+        indentWithStars = nil
       end
+
+
+      print('exit', bulletListDepth)
+      bulletListDepth = bulletListDepth - 1
 
       if tableColNode ~= nil then
         tableColNode:appendChild(boxNode)
@@ -318,7 +351,12 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       -- local textNode
       __.each(para.c, function(subBlock)
         local node = parseNode(subBlock)
-        boxNode:appendChild(node)
+        if node then
+          if subBlock.t == 'Image' then
+            local d
+          end
+          boxNode:appendChild(node)
+        end
       end)
       -- if __.any(boxNode.children, function(child) return child.properties.tabIndex ~= nil end) then
       --   local text = __.join(boxNode.children, function (child)
@@ -327,7 +365,7 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       --   boxNode.children =
       -- end
       if tableColNode ~= nil then
-        for k, v in pairs(tableProps) do
+        for k, v in pairs(tagProps) do
           boxNode.properties[k] = v
         end
         tableColNode:appendChild(boxNode)
@@ -346,7 +384,7 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       if str.c:sub(1, 5) == '{#toc' then
         return
       end
-      local textNode = text(str.c, textProps or nil)
+      local textNode = str.c ~= '' and text(str.c, textProps or nil) or nil
       return textNode
       -- boxNode:appendChild(textNode)
       -- root:appendChild(boxNode)
@@ -355,35 +393,78 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
     end,
     RawBlock = function(rawB)
       if rawB.c[1] == 'html' then
-        if rawB.c[2]:sub(1, 6) == '<table' then
-          local props = extractProps(rawB.c[2])
-          tableNode = box(self.styles.Table or props or nil)
+        local rawBlockTag = rawB.c[2]
+        local rawBlockClosingTag
+        if rawBlockTag:sub(2, 2) == '/' then
+          rawBlockClosingTag = rawBlockTag
+        else
+          local rawBlockTagStem = rawBlockTag:match('(.-)%s')
+          rawBlockClosingTag = rawBlockTagStem:sub(1, 1) .. '/' .. rawBlockTagStem:sub(2, #rawBlockTagStem)
+        end
+        local rawBlockTagContents = rawBlockTag:match(">(.-)<")
+        tagProps = extractProps(rawBlockTag) or nil
+
+        if rawBlockTag:sub(1, 6) == '<table' then
+          tableNode = box(self.styles.Table or tagProps)
           return tableNode
-        elseif rawB.c[2]:sub(1, 8) == '</table>' then
+        elseif rawBlockTag:sub(1, 8) == '</table>' then
           tableNode = nil
           tableRowNode = nil
           tableColNode = nil
-        elseif rawB.c[2]:match('^<%/?t[hrd]') then
-          local tableTag = rawB.c[2]
-          tableProps = extractProps(rawB.c[2]) or nil
-          local node = box(props or nil)
-          if tableTag:sub(1, 3) == '<tr' then
-            -- table.insert(tableBuffer[#tableBuffer].children, node)
-            tableRowNode = node
-          elseif tableTag:sub(1, 5) == '</tr>' then
+        elseif rawBlockTag:match('^<%/?t[hrd]') then
+          tagProps.padding = 4
+          tagProps.border = 1
+          local node = box(tagProps or nil)
+          if rawBlockTag:sub(1, 3) == '<tr' then
+            tableRowNode = mergeNodeProps(node, self.styles.TableRow)
+          elseif rawBlockTag:sub(1, 5) == '</tr>' then
+            __.each(tableRowNode.children, function(colNode)
+              colNode.properties.width = 380 / #tableRowNode.children
+            end)
             tableNode:appendChild(tableRowNode)
             tableRowNode = nil
-          elseif tableTag:sub(1, 3) == '<td' then
-            tableColNode = node
-          elseif tableTag:sub(1, 5) == '</td>' then
+          elseif rawBlockTag:sub(1, 3) == '<td' then
+            if rawBlockTagContents and rawBlockTagContents:gsub("[\n\r\t]", "") ~= '' then
+              local t = text(rawBlockTagContents)
+              node:appendChild(t)
+            end
+            tableColNode = mergeNodeProps(node, self.styles.TableCol)
+            if rawBlockTag:find(rawBlockClosingTag) then
+              tableRowNode:appendChild(tableColNode)
+              tableColNode = nil
+            end
+          elseif rawBlockTag:sub(1, 5) == '</td>' then
             tableRowNode:appendChild(tableColNode)
             tableColNode = nil
-          elseif tableTag:sub(1, 3) == '<th' then
-            tableColNode = node
-          elseif tableTag:sub(1, 5) == '</th>' then
+          elseif rawBlockTag:sub(1, 3) == '<th' then
+            if rawBlockTagContents and rawBlockTagContents:gsub("[\n\r\t]", "") ~= '' then
+              local t = text(rawBlockTagContents)
+              node:appendChild(t)
+            end
+            tableColNode = mergeNodeProps(node, self.styles.TableHead)
+
+            if rawBlockTag:find(rawBlockClosingTag) then
+              tableRowNode:appendChild(tableColNode)
+              tableColNode = nil
+            end
+          elseif rawBlockTag:sub(1, 5) == '</th>' then
             tableRowNode:appendChild(tableColNode)
             tableColNode = nil
           end
+        elseif rawBlockTag:sub(1, 4) == '<ul>' then
+          tableColNode:appendChild(text(''))
+        elseif rawBlockTag:sub(1, 4) == '<li>' then
+          if rawBlockTagContents and rawBlockTagContents:gsub("[\n\r\t]", "") ~= '' then
+            tableColNode.children[#tableColNode.children].text = tableColNode.children[#tableColNode.children].text ..
+                '** ' .. rawBlockTagContents .. '\n'
+          end
+
+          -- if rawBlockTag:find(rawBlockClosingTag) then
+          --   tableRowNode:appendChild(tableColNode)
+          --   tableColNode = nil
+          -- end
+        elseif rawBlockTag:sub(1, 5) == '</li>' then
+          local debug
         end
       end
     end,
@@ -396,8 +477,10 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
         --end anchor
       elseif rawI.c[2]:sub(1, 11) == '<font color' then
         textProps = extractProps(rawI.c[2])
+        return
       elseif rawI.c[2] == '</font>' then
         textProps = nil
+        return
       else
         boxNode = parseAndAddToTree(rawI, boxNode)
       end
@@ -416,17 +499,15 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       local colProps = {}
 
       for i = 1, #colspecs do
-        local prop = {
-          direction = playout.kDirectionVertical,
-          hAlign = PANDOC_TO_PLAYOUT_VALS[colspecs[i][1].t],
-          vAlign = playout.kAlignStretch,
-          border = 1
-        }
+        local props = table.shallowcopy(self.styles.TableCol, { hAlign = PANDOC_TO_PLAYOUT_VALS[colspecs[i][1].t] })
+
         -- TODO: 380 should be max width of the parent
         if colspecs[i][2].t ~= 'ColWidthDefault' then
-          prop.width = colspecs[i][2].c * 380
+          props.width = colspecs[i][2].c * 380
+        else
+          props.width = 380 / #colspecs
         end
-        table.insert(colProps, prop)
+        table.insert(colProps, props)
       end
 
 
@@ -434,11 +515,12 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       local headRows = head[2]
       if headRows then
         for i = 1, #headRows do
-          local rowNode = box({ direction = playout.kDirectionHorizontal, vAlign = playout.kAlignStretch, maxWidth = 380 })
+          local rowNode = box(self.styles.TableRow)
           local rowAttr = headRows[i][1]
           local cells = headRows[i][2]
           for j = 1, #cells do
-            local cellNode = box(colProps[j])
+            local headProps = table.shallowcopy(colProps[j], self.styles.TableHead)
+            local colNode = box(headProps)
             local cell = cells[j]
             local cellAttr = cell[1]
             local cellAlign = cell[2]
@@ -447,14 +529,14 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
             local cellContents = cell[5]
             if #cellContents == 0 then
               local node = text('')
-              cellNode:appendChild(node)
+              colNode:appendChild(node)
             else
               for l = 1, #cellContents do
                 local node = text(cellContents[l].c[1].c)
-                cellNode:appendChild(node)
+                colNode:appendChild(node)
               end
             end
-            rowNode:appendChild(cellNode)
+            rowNode:appendChild(colNode)
 
             -- for k = 1, #cellContents do
             --   local node = parseNode(cellContents[k])
@@ -477,7 +559,7 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
         local bodyRows = bodies[i][4]
         if bodyRows then
           for j = 1, #bodyRows do
-            local rowNode = box({ direction = playout.kDirectionHorizontal, maxWidth = 380 })
+            local rowNode = box(self.styles.TableRow)
             local rowAttr = bodyRows[j][1]
             local cells = bodyRows[j][2]
             for k = 1, #cells do
@@ -522,16 +604,16 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
     end
   }
 
-  countcounter = 0
+  rootElementCounter = 0
 
   log.info('walking tree...')
   local function walkTree(treeNodes)
     for i = 1, #treeNodes do
-      countcounter = i
+      rootElementCounter = i
       local node = treeNodes[i]
       lastNode = parseNode(node)
 
-      if lastNode and #lastNode.children > 0 then
+      if lastNode then
         log.info('Adding top level node ' .. node.t .. ' at ' .. i)
         root:appendChild(lastNode)
       end

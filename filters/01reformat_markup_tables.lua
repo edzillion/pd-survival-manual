@@ -1,3 +1,0 @@
-function Table(elem)
-  
-end

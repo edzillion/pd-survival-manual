@@ -1,26 +1,26 @@
-local ctrldFontFamily = {
-  [playdate.graphics.font.kVariantNormal] = 'fonts/ctrld/ctrld-fixed-16',
-  [playdate.graphics.font.kVariantBold] = 'fonts/ctrld/ctrld-fixed-16b',
-  [playdate.graphics.font.kVariantItalic] = 'fonts/ctrld/ctrld-fixed-16i'
-}
+-- local ctrldFontFamily = {
+--   [playdate.graphics.font.kVariantNormal] = 'fonts/ctrld/ctrld-fixed-16',
+--   [playdate.graphics.font.kVariantBold] = 'fonts/ctrld/ctrld-fixed-16b',
+--   [playdate.graphics.font.kVariantItalic] = 'fonts/ctrld/ctrld-fixed-16i'
+-- }
 
-local scientificaFontFamily = {
-  [playdate.graphics.font.kVariantNormal] = 'fonts/scientifica/scientifica-11',
-  [playdate.graphics.font.kVariantBold] = 'fonts/scientifica/scientificaBold-11',
-  [playdate.graphics.font.kVariantItalic] = 'fonts/scientifica/scientificaItalic-11'
-}
+-- local scientificaFontFamily = {
+--   [playdate.graphics.font.kVariantNormal] = 'fonts/scientifica/scientifica-11',
+--   [playdate.graphics.font.kVariantBold] = 'fonts/scientifica/scientificaBold-11',
+--   [playdate.graphics.font.kVariantItalic] = 'fonts/scientifica/scientificaItalic-11'
+-- }
 
-local roobertFontFamily = {
-  [playdate.graphics.font.kVariantNormal] = 'fonts/roobert/Roobert-11-Medium',
-  [playdate.graphics.font.kVariantBold] = 'fonts/roobert/Roobert-11-Bold',
-  [playdate.graphics.font.kVariantItalic] = 'fonts/roobert/Roobert-11-Medium-Halved'
-}
+-- local roobertFontFamily = {
+--   [playdate.graphics.font.kVariantNormal] = 'fonts/roobert/Roobert-11-Medium',
+--   [playdate.graphics.font.kVariantBold] = 'fonts/roobert/Roobert-11-Bold',
+--   [playdate.graphics.font.kVariantItalic] = 'fonts/roobert/Roobert-11-Medium-Halved'
+-- }
 
-local UWttyp0FontFamily = {
-  [playdate.graphics.font.kVariantNormal] = 'fonts/UW-ttyp0/UW-ttyp0',
-  [playdate.graphics.font.kVariantBold] = 'fonts/UW-ttyp0/UW-ttyp0-Bold',
-  [playdate.graphics.font.kVariantItalic] = 'fonts/UW-ttyp0/UW-ttyp0-Italic'
-}
+-- local UWttyp0FontFamily = {
+--   [playdate.graphics.font.kVariantNormal] = 'fonts/UW-ttyp0/UW-ttyp0',
+--   [playdate.graphics.font.kVariantBold] = 'fonts/UW-ttyp0/UW-ttyp0-Bold',
+--   [playdate.graphics.font.kVariantItalic] = 'fonts/UW-ttyp0/UW-ttyp0-Italic'
+-- }
 
 local leggie24FontFamily = {
   [playdate.graphics.font.kVariantNormal] = 'fonts/leggie/leggie-24',

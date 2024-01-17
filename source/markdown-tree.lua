@@ -1,18 +1,17 @@
 import "CoreLibs/graphics"
 import "CoreLibs/sprites"
 import "CoreLibs/timer"
-
 local gfx <const> = playdate.graphics
 
 import "playout"
+local styles = import 'styles'
 
+-- markdown tree object
 local mdTree = {}
 -- private methods
 local mdTreeMethods = {}
 
-local settings = {
-  linksEnabled = true
-}
+local rootElementCounter
 
 HTML_TO_PLAYOUT_PROPS = {
   cellpadding = 'padding',
@@ -20,28 +19,25 @@ HTML_TO_PLAYOUT_PROPS = {
   valign = 'vAlign',
   bgcolor = 'backgroundColor'
 }
-
 HTML_TO_PLAYOUT_VALS = {
   top = playout.kAlignStart,
   bottom = playout.kAlignEnd,
   center = playout.kAlignCenter
 }
-
 PANDOC_TO_PLAYOUT_VALS = {
   AlignLeft = playout.kAlignStart,
   AlignCenter = playout.kAlignCenter,
   AlignRight = playout.kAlignEnd,
   AlignDefault = playout.kAlignCenter
 }
+DRAW_ELEMENTS_SIZE = 50
 
-local buildCoroutine
-
-mdTree.new = function(styles, treeEntry)
+mdTree.new = function(treeEntry)
   local mdt = {
-    styles = styles,
     tree = nil,
     treeSprite = nil,
-    treeData = treeEntry
+    treeData = treeEntry,
+    lastElementNum = math.min(DRAW_ELEMENTS_SIZE, #treeEntry.json.blocks)
   }
   local tree = setmetatable(mdt, { __index = mdTreeMethods })
   return tree
@@ -50,33 +46,48 @@ end
 function mdTreeMethods:build(callback)
   log.info('Building Tree for ' .. self.treeData.name)
   self.tree = playout.tree:build(self, self.createTree, self.treeData)
-  if settings.linksEnabled then
-    self.tree:computeTabIndex()
-  end
+  self.tree:computeTabIndex()
 
-  self.treeSprite = gfx.sprite.new(self.tree:draw())
+  coroutine.yield()
+  log.info('Drawing Tree for ' .. self.treeData.name)
+  local treeImage = self.tree:draw(1, self.lastElementNum)
+  coroutine.yield()
+  log.info('Creating treeSprite for ' .. self.treeData.name)
+  self.treeSprite = gfx.sprite.new(treeImage)
   local treeRect  = self.treeSprite:getBoundsRect()
   local anchor    = playout.getRectAnchor(treeRect, playout.kAnchorTopLeft)
 
   self.treeSprite:moveTo(-anchor.x, -anchor.y)
   self.treeSprite:add()
-  -- buildCoroutine = nil
+
+  log.info('Tree successfully built for ' .. self.treeData.name .. ', calling callback()')
+  callback(self)
+end
+
+function mdTreeMethods:reDraw(newLastElement)
+  log.info('Redrawing Tree for ' .. self.treeData.name)
+  local treeImage = self.tree:draw(self.lastElementNum, newLastElement)
+  self.lastElementNum = newLastElement
+  log.info('Creating treeSprite for ' .. self.treeData.name)
+  self.treeSprite = gfx.sprite.new(treeImage)
+  local treeRect  = self.treeSprite:getBoundsRect()
+  local anchor    = playout.getRectAnchor(treeRect, playout.kAnchorTopLeft)
+
+  self.treeSprite:moveTo(-anchor.x, -anchor.y)
+  self.treeSprite:add()
+
   log.info('Tree successfully built for ' .. self.treeData.name .. ', calling callback()')
   callback(self)
 end
 
 function mdTreeMethods.createTree(self, ui, treeEntry)
+  -- Playout elements
   local box = ui.box
   local image = ui.image
   local text = ui.text
 
   local links = {}
-  local anchors = {}
-
-  local root = box(self.styles.Root)
-  local lastNode = root
-  local lastBlock
-
+  local root = box(styles.Root)
   local blockCounter = 1
 
   local function hexToGrey(hex_string)
@@ -92,7 +103,7 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
   end
 
   local parseNode = function(node)
-    log.info('Parsing node ' .. node.t)
+    log.trace('Parsing node ' .. node.t)
     local n = parseFunctions[node.t](node)
     if useCoroutines then
       coroutine.yield(rootElementCounter)
@@ -103,7 +114,7 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
   local parseAndAddToTree = function(block, boxNode)
     local nodeToAdd = parseNode(block)
     if nodeToAdd ~= nil then
-      log.info('Adding node ' .. block.t)
+      log.trace('Adding node ' .. block.t)
       boxNode:appendChild(nodeToAdd)
     end
     return boxNode
@@ -118,12 +129,14 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
 
   local function extractProps(tagString)
     local properties = {}
+    -- Convert properties to playout keys
     for property, value in tagString:gmatch('(%a+)%s-=%s-"(.-)"') do
       if string.match(value, "^%d+$") then
         value = tonumber(value)
       end
       properties[HTML_TO_PLAYOUT_PROPS[property] or property] = HTML_TO_PLAYOUT_VALS[value] or value
     end
+    -- Deal with hex colors
     if properties.backgroundColor and properties.backgroundColor:sub(1, 1) == '#' then
       local grey = hexToGrey(properties.backgroundColor)
       properties.backgroundColor = grey > 0.5 and gfx.kColorWhite or gfx.kColorBlack
@@ -148,21 +161,22 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
 
   parseFunctions = {
     BlockQuote = function(blockQuote)
-      local boxNode = box(self.styles[blockQuote.t] or nil)
+      local boxNode = box(styles.BlockQuote or nil)
+
       __.each(blockQuote.c, function(subBlock)
         local nodeToAdd = parseNode(subBlock)
         if nodeToAdd ~= nil then
-          nodeToAdd = mergeNodeProps(nodeToAdd, self.styles.BlockQuoteContent)
-          log.info('Adding node ' .. subBlock.t)
+          nodeToAdd = mergeNodeProps(nodeToAdd, styles.BlockQuoteContent)
+          log.trace('Adding node ' .. subBlock.t)
           boxNode:appendChild(nodeToAdd)
         end
       end)
+
       return boxNode
     end,
     BulletList = function(bulletList)
-      local st = self.styles[bulletList.t]
-
-      local boxNode = box(st or nil)
+      local boxNode = box(styles.BulletList or nil)
+      -- Down one level, add to depth and indent
       bulletListDepth = bulletListDepth + 1
       if indentWithStars ~= nil then
         indentWithStars = ' ' .. indentWithStars
@@ -170,36 +184,26 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
         indentWithStars = '** '
       end
 
-      local listString = ''
+      log.trace('Enter Bulletlist, depth:', bulletListDepth)
+
+      -- Go through the bulletList children, indenting and adding **
       for i = 1, #bulletList.c do
-        print('enter', bulletListDepth)
         for j = 1, #bulletList.c[i] do
           local block = bulletList.c[i][j]
           local nodeToAdd = parseNode(block)
           if nodeToAdd ~= nil then
             if block.t == 'Plain' then
               nodeToAdd.children[1].text = indentWithStars .. nodeToAdd.children[1].text
-            elseif block.t == 'Link' then
-              local debug
             end
             table.insert(bulletListItems, nodeToAdd)
           end
-
-
-          -- boxNode = parseAndAddToTree(bl, boxNode)
-          -- table.insert(listItems, )
-          -- if block.c[i][j].t == 'Plain' then
-          --   for k = 1, #block.c[i][j].c do
-          --     if block.c[i][j].c[k].t == 'Str' then
-          --       table.insert(listItems, block.c[i][j].c[k].c)
-          --     end
-          --   end
-          -- end
         end
       end
 
+      -- Up one level, de-indent
       indentWithStars = indentWithStars:sub(2, #indentWithStars)
 
+      -- If we're at the end of the GP BulletList, concat text / links and add to main BulletList node
       if bulletListDepth == 1 then
         local listTextBuffer = ''
         __.each(bulletListItems, function(node)
@@ -215,27 +219,9 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
                 subNode.text = listTextBuffer .. subNode.text
                 boxNode:appendChild(subNode)
                 listTextBuffer = ''
-                -- table.insert(links, { text = linkText, location = linkLocation })
-                -- local textNode = text(linkText, { target = linkLocation, tabIndex = #links })
               end
-
-              local debug
             end
-            -- if memo[#memo] and memo[#memo].text and subNode.text then
-            --   memo[#memo].text = memo[#memo].text .. subNode.text .. '\n'
-            -- elseif subNode.text then
-
-            -- else
-            --   local debug
-            -- end
-            -- if listTextBuffer ~= '' then
-            --   listTextBuffer = listTextBuffer .. '\n'
-            -- end
           end)
-          -- if listTextBuffer ~= '' then
-          --   listTextBuffer = listTextBuffer .. '\n'
-          -- end
-          local debug
         end)
         boxNode:appendChild(text(listTextBuffer))
         bulletListItems = {}
@@ -243,9 +229,10 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       end
 
 
-      print('exit', bulletListDepth)
+      log.trace('Exit Bulletlist, depth:', bulletListDepth)
       bulletListDepth = bulletListDepth - 1
 
+      -- If we are inside a table then append to that instead of returning
       if tableColNode ~= nil then
         tableColNode:appendChild(boxNode)
       else
@@ -254,11 +241,11 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
     end,
     Header = function(header)
       local headerStyleName = header.t .. header.c[1] --Header1, Header2 etc.
-      local headerStyle = self.styles[headerStyleName] or nil
+      local headerStyle = styles[headerStyleName] or nil
       local boxNode = box(headerStyle)
 
       if header.c[2][1] ~= nil and string.len(header.c[2][1]) > 0 then
-        --has an anchor
+        -- has an anchor
         boxNode.properties.id = header.c[2][1]
       end
 
@@ -278,18 +265,16 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       local linkText = __.join(strings, ' ')
       local linkLocation = link.c[3][1]
       table.insert(links, { text = linkText, location = linkLocation })
-      local textNode = text(linkText, { target = linkLocation, tabIndex = #links })
-      return textNode
-      -- boxNode:appendChild(text(linkText, { target = linkLocation, tabIndex = #links }))
-      -- root:appendChild(boxNode)
+      return text(linkText, { target = linkLocation, tabIndex = #links })
     end,
     OrderedList = function(ordList)
-      local boxNode = box(self.styles[ordList.t] or nil)
+      local boxNode = box(styles.OrderedList or nil)
 
       local listStart = ordList.c[1][1]
       local listStyle = ordList.c[1][2].t
       local listDelim = ordList.c[1][3].t
 
+      -- Add custom delimeter for numerals
       local function addDelim(listNum, listDelim)
         if listDelim == 'DefaultDelim' or listDelim == 'Period' then
           return listNum .. '.'
@@ -302,17 +287,10 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
 
       for i = 1, #ordList.c[2] do
         boxNode = parseAndAddToTree(ordList.c[2][i][1], boxNode)
-        -- table.insert(listItems, )
-        -- if block.c[i][j].t == 'Plain' then
-        --   for k = 1, #block.c[i][j].c do
-        --     if block.c[i][j].c[k].t == 'Str' then
-        --       table.insert(listItems, block.c[i][j].c[k].c)
-        --     end
-        --   end
-        -- end
       end
-      local ordCounter = listStart
 
+      -- Add numerals and concat text
+      local ordCounter = listStart
       local listStrings = __.reduce(boxNode.children, {}, function(memo, node)
         __.each(node.children, function(subNode)
           if subNode.properties.tabIndex ~= nil then
@@ -326,19 +304,13 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
             table.insert(memo, addDelim(ordCounter, listDelim) .. subNode.text)
             ordCounter = ordCounter + 1
           end
-          -- if memo[#memo] and memo[#memo].text and subNode.text then
-          --   memo[#memo].text = memo[#memo].text .. subNode.text .. '\n'
-          -- elseif subNode.text then
-
-          -- else
-          --   local debug
-          -- end
         end)
         return memo
       end)
-      -- local listItemString = __.join(mapped, '\n')
+
       boxNode.children = { text(__.join(listStrings, '\n')) }
 
+      -- If we are inside a table apppend to that instead of returning
       if tableColNode ~= nil then
         tableColNode:appendChild(boxNode)
       else
@@ -346,25 +318,20 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       end
     end,
     Para = function(para)
-      local boxNode = box(self.styles[para.t] or nil)
-      -- local nodesToAdd = {}
-      -- local textNode
+      local boxNode = box(styles.Para or nil)
+
       __.each(para.c, function(subBlock)
         local node = parseNode(subBlock)
         if node then
           if subBlock.t == 'Image' then
-            local d
+            log.warn('Para subblock is an Image, special case?')
           end
           boxNode:appendChild(node)
         end
       end)
-      -- if __.any(boxNode.children, function(child) return child.properties.tabIndex ~= nil end) then
-      --   local text = __.join(boxNode.children, function (child)
-      --     child.text
-      --   end)
-      --   boxNode.children =
-      -- end
-      if tableColNode ~= nil then
+
+      -- If we are inside a table append to that instead of returning, applying Tag Props
+      if tableColNode then
         for k, v in pairs(tagProps) do
           boxNode.properties[k] = v
         end
@@ -374,24 +341,23 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       end
     end,
     Plain = function(plain)
-      local boxNode = box(self.styles[plain.t] or nil)
+      local boxNode = box(styles.Plain or nil)
       __.each(plain.c, function(subBlock)
         boxNode = parseAndAddToTree(subBlock, boxNode)
       end)
       return boxNode
     end,
     Str = function(str)
+      -- Dealing with TOC generated extra link string
       if str.c:sub(1, 5) == '{#toc' then
         return
       end
+      -- if string is empty return nil (don't add an element)
       local textNode = str.c ~= '' and text(str.c, textProps or nil) or nil
       return textNode
-      -- boxNode:appendChild(textNode)
-      -- root:appendChild(boxNode)
-      -- lastheader = 'Header'
-      -- lastNode = boxNode
     end,
     RawBlock = function(rawB)
+      -- Mostly dealing with HTML tables
       if rawB.c[1] == 'html' then
         local rawBlockTag = rawB.c[2]
         local rawBlockClosingTag
@@ -402,10 +368,11 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
           rawBlockClosingTag = rawBlockTagStem:sub(1, 1) .. '/' .. rawBlockTagStem:sub(2, #rawBlockTagStem)
         end
         local rawBlockTagContents = rawBlockTag:match(">(.-)<")
+        -- tagProps are applied to tags inside the table
         tagProps = extractProps(rawBlockTag) or nil
 
         if rawBlockTag:sub(1, 6) == '<table' then
-          tableNode = box(self.styles.Table or tagProps)
+          tableNode = box(styles.Table or tagProps)
           return tableNode
         elseif rawBlockTag:sub(1, 8) == '</table>' then
           tableNode = nil
@@ -416,8 +383,9 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
           tagProps.border = 1
           local node = box(tagProps or nil)
           if rawBlockTag:sub(1, 3) == '<tr' then
-            tableRowNode = mergeNodeProps(node, self.styles.TableRow)
+            tableRowNode = mergeNodeProps(node, styles.TableRow)
           elseif rawBlockTag:sub(1, 5) == '</tr>' then
+            -- At closing tag of table row, we know how many cols there are so calc width
             __.each(tableRowNode.children, function(colNode)
               colNode.properties.width = 380 / #tableRowNode.children
             end)
@@ -428,7 +396,7 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
               local t = text(rawBlockTagContents)
               node:appendChild(t)
             end
-            tableColNode = mergeNodeProps(node, self.styles.TableCol)
+            tableColNode = mergeNodeProps(node, styles.TableCol)
             if rawBlockTag:find(rawBlockClosingTag) then
               tableRowNode:appendChild(tableColNode)
               tableColNode = nil
@@ -441,7 +409,7 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
               local t = text(rawBlockTagContents)
               node:appendChild(t)
             end
-            tableColNode = mergeNodeProps(node, self.styles.TableHead)
+            tableColNode = mergeNodeProps(node, styles.TableHead)
 
             if rawBlockTag:find(rawBlockClosingTag) then
               tableRowNode:appendChild(tableColNode)
@@ -454,17 +422,11 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
         elseif rawBlockTag:sub(1, 4) == '<ul>' then
           tableColNode:appendChild(text(''))
         elseif rawBlockTag:sub(1, 4) == '<li>' then
+          -- Concat all <li> tags into one text() element
           if rawBlockTagContents and rawBlockTagContents:gsub("[\n\r\t]", "") ~= '' then
             tableColNode.children[#tableColNode.children].text = tableColNode.children[#tableColNode.children].text ..
                 '** ' .. rawBlockTagContents .. '\n'
           end
-
-          -- if rawBlockTag:find(rawBlockClosingTag) then
-          --   tableRowNode:appendChild(tableColNode)
-          --   tableColNode = nil
-          -- end
-        elseif rawBlockTag:sub(1, 5) == '</li>' then
-          local debug
         end
       end
     end,
@@ -476,6 +438,7 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       elseif rawI.c[2] == '</a>' then
         --end anchor
       elseif rawI.c[2]:sub(1, 11) == '<font color' then
+        -- textProps apply to all text() elements inside the font tag
         textProps = extractProps(rawI.c[2])
         return
       elseif rawI.c[2] == '</font>' then
@@ -487,8 +450,9 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       return boxNode
     end,
     Table = function(pandocTable)
+      -- Markdown tables. HTML tables are RawBlock elements
       local attr = pandocTable.c[1]
-      local boxNode = box(self.styles.Table or { maxWidth = 380 })
+      local boxNode = box(styles.Table or { maxWidth = 380 })
 
       local caption = pandocTable.c[2]
       local colspecs = pandocTable.c[3]
@@ -496,12 +460,10 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       local bodies = pandocTable.c[5]
       local foot = pandocTable.c[6]
 
+      -- Determine the props for each col based on colspecs
       local colProps = {}
-
       for i = 1, #colspecs do
-        local props = table.shallowcopy(self.styles.TableCol, { hAlign = PANDOC_TO_PLAYOUT_VALS[colspecs[i][1].t] })
-
-        -- TODO: 380 should be max width of the parent
+        local props = table.shallowcopy(styles.TableCol, { hAlign = PANDOC_TO_PLAYOUT_VALS[colspecs[i][1].t] })
         if colspecs[i][2].t ~= 'ColWidthDefault' then
           props.width = colspecs[i][2].c * 380
         else
@@ -510,16 +472,16 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
         table.insert(colProps, props)
       end
 
-
+      -- First deal with the header row
       local headAttr = head[1]
       local headRows = head[2]
       if headRows then
         for i = 1, #headRows do
-          local rowNode = box(self.styles.TableRow)
+          local rowNode = box(styles.TableRow)
           local rowAttr = headRows[i][1]
           local cells = headRows[i][2]
           for j = 1, #cells do
-            local headProps = table.shallowcopy(colProps[j], self.styles.TableHead)
+            local headProps = table.shallowcopy(colProps[j], styles.TableHead)
             local colNode = box(headProps)
             local cell = cells[j]
             local cellAttr = cell[1]
@@ -537,21 +499,12 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
               end
             end
             rowNode:appendChild(colNode)
-
-            -- for k = 1, #cellContents do
-            --   local node = parseNode(cellContents[k])
-            --   for key, val in pairs(colProps[k]) do
-            --     node.properties[key] = val
-            --   end
-            --   -- TODO: merge props here from colProps
-            --   rowNode:appendChild(node)
-            -- end
           end
           boxNode:appendChild(rowNode)
         end
       end
 
-
+      -- Then deal with the rest of the table rows
       for i = 1, #bodies do
         local bodyAttr = bodies[i][1]
         local row_head_columns = bodies[i][2]
@@ -559,7 +512,7 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
         local bodyRows = bodies[i][4]
         if bodyRows then
           for j = 1, #bodyRows do
-            local rowNode = box(self.styles.TableRow)
+            local rowNode = box(styles.TableRow)
             local rowAttr = bodyRows[j][1]
             local cells = bodyRows[j][2]
             for k = 1, #cells do
@@ -580,20 +533,6 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
                 end
               end
               rowNode:appendChild(cellNode)
-              -- colProps[1].flex = nil
-              -- colProps[2].flex = nil
-              -- colProps[1].width = 100
-              -- colProps[2].width = 200
-              -- if j == 4 then
-              --   local debug
-              -- end
-              -- for k = 1, #cellContents do
-
-              --   local node = parseNode(cellContents[k])
-
-              --   -- TODO: merge props here from colProps
-              --   row:appendChild(node)
-              -- end
             end
             boxNode:appendChild(rowNode)
           end
@@ -604,29 +543,30 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
     end
   }
 
+  -- Walk the page tree parsing nodes as we go
   rootElementCounter = 0
-
-  log.info('walking tree...')
+  log.info('walking page tree...')
   local function walkTree(treeNodes)
     for i = 1, #treeNodes do
       rootElementCounter = i
       local node = treeNodes[i]
       lastNode = parseNode(node)
-
       if lastNode then
-        log.info('Adding top level node ' .. node.t .. ' at ' .. i)
+        log.info('Adding top level node ' .. node.t .. ' at ' .. #root.children + 1)
         root:appendChild(lastNode)
       end
     end
   end
 
   walkTree(treeEntry.json.blocks)
+  -- root is our generated page
   return root
 end
 
 function mdTreeMethods:update(crankChange, offset)
-  -- if crankChange ~= 0 or offset ~= 0 then
   local treePosition = { x = self.treeSprite.x, y = self.treeSprite.y }
+
+  -- Move the tree based on scrolling
   if self.tree.scrollTarget then
     if self.tree.scrollTarget.properties.direction == playout.kDirectionHorizontal then
       treePosition.x = (self.treeSprite.width / 2) + offset
@@ -635,10 +575,34 @@ function mdTreeMethods:update(crankChange, offset)
     end
   end
 
-  self.treeSprite:moveTo(treePosition.x, treePosition.y)
-  -- end
-  self.treeSprite:update()
+  if self.lastElementNum < #self.treeData.json.blocks then
+    local topElementIndex = 1
+    local accum = self.tree.root.properties.padding
+    for i = 1, self.lastElementNum do
+      local node = self.tree.root.children[i]
+      accum = accum + node.rect.height + self.tree.root.properties.spacing
+      if -accum < offset then
+        topElementIndex = i
+        break
+      end
+    end
+    if topElementIndex > self.lastElementNum - 10 then
+      self:reDraw(self.lastElementNum + DRAW_ELEMENTS_SIZE)
+    end
+    -- local target = currentPage.tree:get(targetId)
+    -- pointer:remove()
 
+    -- local currentPageRect = currentPage.treeSprite:getBoundsRect()
+    -- local targetPos       = getRectAnchor(target.rect, playout.kAnchorTopLeft):offsetBy(getRectAnchor(currentPageRect,
+    --   playout.kAnchorTopLeft):unpack())
+
+    -- if treePosition.y - 400 < -self.treeSprite.height / 2 then
+    --   self:reDraw(self.lastElementNum + DRAW_ELEMENTS_SIZE)
+    -- end
+  end
+
+  self.treeSprite:moveTo(treePosition.x, treePosition.y)
+  self.treeSprite:update()
   playdate.timer.updateTimers()
   playdate.drawFPS()
 end

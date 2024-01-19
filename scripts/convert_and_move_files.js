@@ -1,5 +1,7 @@
 const nodePandoc = require("node-pandoc");
 const fs = require("node:fs");
+const fsextra = require("fs-extra");
+
 const assert = require("assert");
 const path = require("node:path");
 const Jimp = require("jimp");
@@ -8,14 +10,30 @@ const MergeFiles = require("merge-files");
 const FILTER_FOLDER = "filters";
 const MARKDOWN_FOLDER = "SurvivalManual.wiki";
 const OUTPUT_FOLDER = "source/json";
+const DEV_FOLDER = 'dev';
 
 const MAX_IMAGE_DIMENSIONS = { x: 380, y: 1200 };
 
+const releaseVersion = process.argv[2];
+
 console.info("Starting convert_and_move_files.js script, checking folders ...");
+
+console.info("Copying source from " + DEV_FOLDER);
+fsextra.copySync(DEV_FOLDER, 'source')
+
+if (releaseVersion != null) {
+  console.info("Release version");
+	fs.unlinkSync("source/log.lua", (err) => {
+		if (err) throw err;
+		console.log("log.lua deleted.");
+	});
+}
 
 fs.lstatSync(FILTER_FOLDER).isDirectory();
 fs.lstatSync(MARKDOWN_FOLDER).isDirectory();
-fs.lstatSync(OUTPUT_FOLDER).isDirectory();
+if (!fs.existsSync(OUTPUT_FOLDER)) {
+  fs.mkdirSync(OUTPUT_FOLDER)
+}
 
 const files = fs.readdirSync(MARKDOWN_FOLDER);
 const mdFiles = files.filter((file) => {
@@ -73,6 +91,7 @@ mdFiles.forEach(function (filename) {
 	tocArgs.push({ src: src, args: args });
 });
 
+mdFiles.push('Home.md')
 var convertArgs = [];
 // convert
 mdFiles.forEach(function (filename) {
@@ -88,7 +107,7 @@ mdFiles.forEach(function (filename) {
 		"/" +
 		name +
 		".json";
-  console.log(args)
+	console.log(args);
 	convertArgs.push({ src: src, args: args });
 });
 

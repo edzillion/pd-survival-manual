@@ -1,16 +1,27 @@
 {
 	"dependencies": {
+		"fs-extra": "^11.2.0",
 		"jimp": "^0.22.10",
+		"luamin": "^1.0.4",
 		"merge-files": "^0.1.2",
-		"node-pandoc": "^0.3.0"
+		"node-pandoc": "^0.3.0",
+		"strip-comments": "^2.0.1"
 	},
 	"name": "playdate-markdown",
-	"version": "0.0.1",
+	"version": "0.1.0",
 	"description": "Tool for converting markdown into a Playout tree for display on a Playdate",
 	"main": "convert_to_json.js",
 	"scripts": {
 		"test": "echo \"Error: no test specified\" && exit 1",
-		"build": "node convert_and_move_files.js"
+		"build": "node scripts/convert_and_move_files.js",
+		"build_release": "node scripts/convert_and_move_files.js 0.1.0",
+		"strip": "node scripts/strip_logs_and_comments.js",
+		"minify": "node scripts/minify.js",
+		"compile": "pdc source pd-survival-manual.pdx",
+		"cleanup": "node scripts/cleanup.js",
+		"release": "npm run build_release && npm run strip && npm run minify && npm run cleanup && npm run compile",
+		"sim": "PlaydateSimulator pd-survival-manual.pdx",
+		"dev": "node scripts/copy.js && npm run compile && npm run sim"
 	},
 	"author": "edzillion@gmail.com",
 	"license": "AGPL-3.0"

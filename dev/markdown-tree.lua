@@ -1,7 +1,8 @@
 import "CoreLibs/graphics"
 import "CoreLibs/sprites"
 import "CoreLibs/timer"
-local gfx <const> = playdate.graphics
+local gfx = playdate.graphics
+local geo = playdate.geometry
 
 import "playout"
 local styles = import 'styles'
@@ -11,6 +12,7 @@ local mdTree = {}
 -- private methods
 local mdTreeMethods = {}
 
+local redrawRoutine
 local rootElementCounter
 
 HTML_TO_PLAYOUT_PROPS = {
@@ -37,7 +39,7 @@ mdTree.new = function(treeEntry)
     tree = nil,
     treeSprite = nil,
     treeData = treeEntry,
-    lastElementNum = math.min(DRAW_ELEMENTS_SIZE, #treeEntry.json.blocks)
+    lastElementNum = DRAW_ELEMENTS_SIZE --math.min(DRAW_ELEMENTS_SIZE, #treeEntry.json.blocks)
   }
   local tree = setmetatable(mdt, { __index = mdTreeMethods })
   return tree
@@ -48,26 +50,12 @@ function mdTreeMethods:build(callback)
   self.tree = playout.tree:build(self, self.createTree, self.treeData)
   self.tree:computeTabIndex()
 
-  coroutine.yield()
+  local treeImage
   log.info('Drawing Tree for ' .. self.treeData.name)
-  local treeImage = self.tree:draw(1, self.lastElementNum)
+  DrawTreeRoutine = coroutine.create(function()
+    treeImage = self.tree:draw()
+  end)
   coroutine.yield()
-  log.info('Creating treeSprite for ' .. self.treeData.name)
-  self.treeSprite = gfx.sprite.new(treeImage)
-  local treeRect  = self.treeSprite:getBoundsRect()
-  local anchor    = playout.getRectAnchor(treeRect, playout.kAnchorTopLeft)
-
-  self.treeSprite:moveTo(-anchor.x, -anchor.y)
-  self.treeSprite:add()
-
-  log.info('Tree successfully built for ' .. self.treeData.name .. ', calling callback()')
-  callback(self)
-end
-
-function mdTreeMethods:reDraw(newLastElement)
-  log.info('Redrawing Tree for ' .. self.treeData.name)
-  local treeImage = self.tree:draw(self.lastElementNum, newLastElement)
-  self.lastElementNum = newLastElement
   log.info('Creating treeSprite for ' .. self.treeData.name)
   self.treeSprite = gfx.sprite.new(treeImage)
   local treeRect  = self.treeSprite:getBoundsRect()
@@ -88,7 +76,6 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
 
   local links = {}
   local root = box(styles.Root)
-  local blockCounter = 1
 
   local function hexToGrey(hex_string)
     -- Convert hex to RGB
@@ -105,7 +92,7 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
   local parseNode = function(node)
     log.trace('Parsing node ' .. node.t)
     local n = parseFunctions[node.t](node)
-    if useCoroutines then
+    if UseCoroutines then
       coroutine.yield(rootElementCounter)
     end
     return n
@@ -553,6 +540,11 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       lastNode = parseNode(node)
       if lastNode then
         log.info('Adding top level node ' .. node.t .. ' at ' .. #root.children + 1)
+        if (node.t:sub(1, 6) == 'Header') then
+          lastNode.children[1].text = (#root.children + 1) .. ' ' .. lastNode.children[1].text
+          local d
+        end
+
         root:appendChild(lastNode)
       end
     end
@@ -561,6 +553,46 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
   walkTree(treeEntry.json.blocks)
   -- root is our generated page
   return root
+end
+
+function mdTreeMethods:reDraw(newLastElement)
+  log.info('Redrawing Tree for ' .. self.treeData.name)
+
+  local currentImg = self.tree.img:copy()
+  local cw, ch = currentImg:getSize()
+  if UseCoroutines then
+    coroutine.yield('copy previous sprite image')
+  end
+  self.tree:layout(self.lastElementNum, newLastElement)
+  local rect = self.tree.rect
+  if UseCoroutines then
+    coroutine.yield('layout new tree')
+  end
+  local newTreeImage = self.tree:draw(self.lastElementNum, newLastElement)
+  if UseCoroutines then
+    coroutine.yield('draw new tree')
+  end
+  local newImg = gfx.image.new(rect.width, rect.height + ch)
+  if UseCoroutines then
+    coroutine.yield('new target sprite image')
+  end
+  gfx.pushContext(newImg)
+  do
+    currentImg:draw(0, 0)
+    newTreeImage:draw(0, ch)
+  end
+  gfx.popContext()
+  if UseCoroutines then
+    coroutine.yield('draw to target sprite image')
+  end
+  self.tree.img = newImg
+  self.treeSprite:setImage(newImg)
+
+  self.lastElementNum = newLastElement
+  if UseCoroutines then
+    coroutine.yield('set new sprite image')
+  end
+  log.info('Tree successfully redrawn for ' .. self.treeData.name)
 end
 
 function mdTreeMethods:update(crankChange, offset)
@@ -575,31 +607,51 @@ function mdTreeMethods:update(crankChange, offset)
     end
   end
 
-  if self.lastElementNum < #self.treeData.json.blocks then
-    local topElementIndex = 1
-    local accum = self.tree.root.properties.padding
-    for i = 1, self.lastElementNum do
-      local node = self.tree.root.children[i]
-      accum = accum + node.rect.height + self.tree.root.properties.spacing
-      if -accum < offset then
-        topElementIndex = i
-        break
-      end
-    end
-    if topElementIndex > self.lastElementNum - 10 then
-      self:reDraw(self.lastElementNum + DRAW_ELEMENTS_SIZE)
-    end
-    -- local target = currentPage.tree:get(targetId)
-    -- pointer:remove()
+  -- if self.lastElementNum < #self.treeData.json.blocks then
+  --   local topElementIndex = 1
+  --   local accum = self.tree.root.properties.padding
+  --   for i = 1, self.lastElementNum do
+  --     local node = self.tree.root.children[i]
+  --     accum = accum + node.rect.height + self.tree.root.properties.spacing
+  --     if -accum < offset then
+  --       topElementIndex = i
+  --       break
+  --     end
+  --   end
+  -- if topElementIndex > self.lastElementNum - 10 and CurrentMode ~= MODES.PRELOADING then
+  --   log.info('Redrawing from lasElemNum: ' .. self.lastElementNum)
+  --   if UseCoroutines then
+  --     CurrentMode = MODES.PRELOADING
+  --     redrawRoutine = coroutine.create(function(lastElemNum)
+  --       self:reDraw(lastElemNum)
+  --     end)
+  --   else
+  --     self:reDraw(self.lastElementNum + DRAW_ELEMENTS_SIZE)
+  --   end
+  -- end
 
-    -- local currentPageRect = currentPage.treeSprite:getBoundsRect()
-    -- local targetPos       = getRectAnchor(target.rect, playout.kAnchorTopLeft):offsetBy(getRectAnchor(currentPageRect,
-    --   playout.kAnchorTopLeft):unpack())
+  -- if CurrentMode == MODES.PRELOADING then
+  --   local status = coroutine.status(redrawRoutine)
+  --   if status == "suspended" then
+  --     local success, stage = coroutine.resume(redrawRoutine, self.lastElementNum + DRAW_ELEMENTS_SIZE)
+  --     if success and stage then
+  --       log.trace(stage)
+  --     end
+  --   elseif status == 'dead' then
+  --     CurrentMode = MODES.READING
+  --   end
+  -- end
+  -- local target = currentPage.tree:get(targetId)
+  -- pointer:remove()
 
-    -- if treePosition.y - 400 < -self.treeSprite.height / 2 then
-    --   self:reDraw(self.lastElementNum + DRAW_ELEMENTS_SIZE)
-    -- end
-  end
+  -- local currentPageRect = currentPage.treeSprite:getBoundsRect()
+  -- local targetPos       = getRectAnchor(target.rect, playout.kAnchorTopLeft):offsetBy(getRectAnchor(currentPageRect,
+  --   playout.kAnchorTopLeft):unpack())
+
+  -- if treePosition.y - 400 < -self.treeSprite.height / 2 then
+  --   self:reDraw(self.lastElementNum + DRAW_ELEMENTS_SIZE)
+  -- end
+  -- end
 
   self.treeSprite:moveTo(treePosition.x, treePosition.y)
   self.treeSprite:update()

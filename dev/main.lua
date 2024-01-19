@@ -1,58 +1,64 @@
-local playdate_markdown = {
-  _VERSION     = 'playdate-markdown v0.0.1',
+local pd_survival_manual = {
+  _VERSION     = 'playdate-markdown v0.1.0',
   _DESCRIPTION = 'Tool for converting markdown into a Playout tree for display on a Playdate',
   _URL         = 'https://github.com/edzillion/playdate-markdown',
   _LICENSE     = [[GNU AFFERO GENERAL PUBLIC LICENSE Version 3]]
 }
 
 import 'CoreLibs/animation'
-local gfx <const> = playdate.graphics
-local file <const> = playdate.file
+local gfx          = playdate.graphics
+local file         = playdate.file
 
-__ = import 'underscore'
-log = import "log"
+__                 = import 'underscore'
+log                = import "log"
+log.level          = 'info'
 
 local MarkdownTree = import 'markdown-tree'
 
-local JSON_FOLDER <const> = 'json'
-local MODES <const> = {
+local JSON_FOLDER  = 'json'
+MODES              = {
   READING = 1,
   TABBING = 2,
-  LOADING = 3
+  LOADING = 3,
+  PRELOADING = 4
 }
 
-local loadingPage = 'Psychology'
-useCoroutines = true
+local loadingPage  = 'Home'
+UseCoroutines      = true
+BuildTreeRoutine   = nil
+DrawTreeRoutine    = nil
+
 
 local currentPage
-local currentMode = MODES.LOADING
-local pages = {}
-local history = {}
+CurrentMode                    = MODES.LOADING
+local pages                    = {}
+local history                  = {}
 
 local pointer
-local pointerPos = { x = 0, y = 0 }
+local pointerPos               = { x = 0, y = 0 }
 local pointerTimer
 local pageTimer
 local selected
-local selectedIndex = 1
+local selectedIndex            = 1
 
 -- The speed of scrolling via the crank
-local CRANK_SCROLL_SPEED <const> = 1.2
+local CRANK_SCROLL_SPEED       = 1.2
 -- The current speed modifier for the crank
-local crankSpeedModifier = 1
+local crankSpeedModifier       = 1
 -- The crank offset from before skipScrollTicks was set
-local previousCrankOffset = 0
+local previousCrankOffset      = 0
 -- The number of ticks to skip modulating the scroll offset
-local skipScrollTicks = 0
+local skipScrollTicks          = 0
 -- The scroll offset
-local offset = 0
-local previousOffset = offset
+local offset                   = 0
+local previousOffset           = offset
 -- The crank change sinice last update
-local crankChange = 0
+local crankChange              = 0
 
 local loaderAnimation
 local treeElementsCount
-local treeElementsLoaded = 0
+local treeElementsBuilt        = 0
+local treeElementsDrawn        = 0
 local scrollButtonOffsetChange = 0
 
 local function changeMode(newMode)
@@ -63,12 +69,12 @@ local function changeMode(newMode)
     end
   end
   log.info('MODE CHANGE: ' .. newModeName)
-  currentMode = newMode
+  CurrentMode = newMode
 end
 
 local function setPointerPos()
   log.info('setPointerPos()')
-  if #currentPage.tree.tabIndex == 0 or currentMode == MODES.READING then
+  if #currentPage.tree.tabIndex == 0 or CurrentMode == MODES.READING then
     pointer:remove()
     log.info('pointer:remove()')
     return
@@ -160,66 +166,77 @@ local function clickLink()
     treeElementsCount = nil
 
     loadingPage = linkTarget
-    BuildTreeRoutine = coroutine.create(function(pageTree)
-      pageTree:build(function(page)
+
+    if UseCoroutines then
+      BuildTreeRoutine = coroutine.create(function(pageTree)
+        pageTree:build(function(page)
+          currentPage = page
+          selectedIndex = 1
+          offset = 0
+          changeMode(MODES.READING)
+          setPointerPos()
+        end)
+      end)
+    else
+      pages[loadingPage]:build(function(page)
         currentPage = page
         selectedIndex = 1
         offset = 0
         changeMode(MODES.READING)
         setPointerPos()
       end)
-    end)
+    end
   end
 end
 
 local inputHandlers = {
   rightButtonDown = function()
-    if currentMode == MODES.TABBING then
+    if CurrentMode == MODES.TABBING then
       return nextTabItem()
     end
   end,
   downButtonDown  = function()
-    if currentMode == MODES.TABBING then
+    if CurrentMode == MODES.TABBING then
       return nextTabItem()
-    elseif currentMode == MODES.READING then
+    elseif CurrentMode == MODES.READING then
       scrollButtonOffsetChange = -5
     end
   end,
   downButtonUp    = function()
-    if currentMode == MODES.READING then
+    if CurrentMode == MODES.READING then
       scrollButtonOffsetChange = 0
     end
   end,
   leftButtonDown  = function()
-    if currentMode == MODES.TABBING then
+    if CurrentMode == MODES.TABBING then
       return prevTabItem()
     end
   end,
   upButtonDown    = function()
-    if currentMode == MODES.TABBING then
+    if CurrentMode == MODES.TABBING then
       return prevTabItem()
-    elseif currentMode == MODES.READING then
+    elseif CurrentMode == MODES.READING then
       scrollButtonOffsetChange = 5
     end
   end,
   upButtonUp      = function()
-    if currentMode == MODES.READING then
+    if CurrentMode == MODES.READING then
       scrollButtonOffsetChange = 0
     end
   end,
   AButtonDown     = function()
     -- if we hit A while in reading mode then tab to the first link in the currently viewable content
-    if currentMode == MODES.READING then
+    if CurrentMode == MODES.READING then
       retargetPointer()
-    elseif currentMode == MODES.TABBING then
+    elseif CurrentMode == MODES.TABBING then
       clickLink()
     end
   end,
   BButtonDown     = function()
-    if currentMode == MODES.TABBING then
+    if CurrentMode == MODES.TABBING then
       changeMode(MODES.READING)
       setPointerPos()
-    elseif currentMode == MODES.READING then
+    elseif CurrentMode == MODES.READING then
       if #history > 0 then
         local targetTree = table.remove(history, #history)
         loadingPage = targetTree.name
@@ -236,7 +253,7 @@ local inputHandlers = {
           currentPage.tree = nil
           treeElementsCount = nil
 
-          if useCoroutines then
+          if UseCoroutines then
             BuildTreeRoutine = coroutine.create(function(pageTree)
               pageTree:build(function(page)
                 currentPage = page
@@ -278,7 +295,7 @@ local inputHandlers = {
       offset = offset - change * CRANK_SCROLL_SPEED * crankSpeedModifier
       previousCrankOffset = change * CRANK_SCROLL_SPEED * crankSpeedModifier
     end
-    if currentMode == MODES.TABBING and pointerPos then
+    if CurrentMode == MODES.TABBING and pointerPos then
       local offsetChange = offset - previousOffset
       pointerPos.y = pointerPos.y + offsetChange
       if pointerPos.y > 250 or pointerPos.y < -10 then
@@ -325,7 +342,7 @@ local function init()
   pointer:setRotation(90)
   pointer:setZIndex(1)
 
-  if useCoroutines then
+  if UseCoroutines then
     BuildTreeRoutine = coroutine.create(function(pageTree)
       pageTree:build(function(page)
         currentPage = page
@@ -384,29 +401,55 @@ function os.date(format, time)
 end
 
 function playdate.update()
-  if currentMode == MODES.LOADING then
+  if CurrentMode == MODES.LOADING then
     if treeElementsCount == nil then
       treeElementsCount = #pages[loadingPage].treeData.json.blocks
-      treeElementsLoaded = 0
+      treeElementsBuilt = 0
     end
 
-    local status = coroutine.status(BuildTreeRoutine)
-    if status == "suspended" then
-      local success, elementsLoaded = coroutine.resume(BuildTreeRoutine, pages[loadingPage])
-      if success and elementsLoaded then
-        treeElementsLoaded = elementsLoaded
-      end
-    elseif status == 'dead' then
-      log.error(coroutine.xpcall(BuildTreeRoutine))
-    end
+    local prevColor = gfx.getColor()
+    gfx.setColor(gfx.kColorBlack)
+
     loaderAnimation:draw(0, 0)
-    local loadingText = 'Loading ' .. loadingPage
+    gfx.setColor(playdate.graphics.kColorBlack)
+
+    local loadingText = DrawTreeRoutine and 'Drawing ' .. loadingPage or 'Loading ' .. loadingPage
     gfx.drawTextAligned(loadingText, 200, 190, kTextAlignment.center)
+
     gfx.drawRect(60, 220, 280, 6)
-    local xScale = 279 * (treeElementsLoaded / treeElementsCount)
+    local xScale = DrawTreeRoutine and 279 * (treeElementsDrawn / treeElementsCount) or
+        279 * (treeElementsBuilt / treeElementsCount)
     gfx.setLineWidth(6)
     gfx.drawLine(60, 223, 60 + xScale, 223)
     gfx.setLineWidth(1)
+    gfx.setColor(prevColor)
+
+    if DrawTreeRoutine then
+      local status = coroutine.status(DrawTreeRoutine)
+      if status == "suspended" then
+        local success, elementsDrawn = coroutine.resume(DrawTreeRoutine, pages[loadingPage])
+        if success and elementsDrawn then
+          treeElementsDrawn = elementsDrawn
+        end
+      elseif status == 'dead' then
+        DrawTreeRoutine = nil
+        treeElementsDrawn = 0
+      end
+    else
+      local status = coroutine.status(BuildTreeRoutine)
+      if status == "suspended" then
+        local success, elementsBuilt = coroutine.resume(BuildTreeRoutine, pages[loadingPage])
+        if elementsBuilt == treeElementsCount then
+          local debug
+        end
+        if success and elementsBuilt then
+          treeElementsBuilt = elementsBuilt
+        end
+      elseif status == 'dead' then
+        log.error(coroutine.xpcall(BuildTreeRoutine))
+      end
+    end
+
   else
     offset = offset + scrollButtonOffsetChange
     -- Keep offset within bounds of page
@@ -421,7 +464,7 @@ function playdate.update()
     end
     currentPage:update(crankChange, offset)
 
-    if currentMode == MODES.TABBING and pointerPos then
+    if CurrentMode == MODES.TABBING and pointerPos then
       pointer:moveTo(pointerPos.x, pointerPos.y)
       pointer:update()
     end

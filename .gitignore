@@ -52,3 +52,4 @@ luac.out
 /source/playout.lua
 /temp
 .sentry-native/
+source/

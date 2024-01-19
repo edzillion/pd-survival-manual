@@ -53,3 +53,4 @@ luac.out
 /temp
 .sentry-native/
 source/
+/.vscode/

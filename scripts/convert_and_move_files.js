@@ -10,29 +10,29 @@ const MergeFiles = require("merge-files");
 const FILTER_FOLDER = "filters";
 const MARKDOWN_FOLDER = "SurvivalManual.wiki";
 const OUTPUT_FOLDER = "source/json";
-const DEV_FOLDER = 'dev';
+const DEV_FOLDER = "dev";
 
-const MAX_IMAGE_DIMENSIONS = { x: 380, y: 1200 };
+const MAX_IMAGE_DIMENSIONS = { x: 388, y: 1200 };
 
 const releaseVersion = process.argv[2];
 
 console.info("Starting convert_and_move_files.js script, checking folders ...");
 
 console.info("Copying source from " + DEV_FOLDER);
-fsextra.copySync(DEV_FOLDER, 'source')
+fsextra.copySync(DEV_FOLDER, "source");
 
 if (releaseVersion != null) {
-  console.info("Release version");
-	fs.unlinkSync("source/log.lua", (err) => {
+	console.info("Release version");
+	fs.unlinkSync("source/pd-log.lua", (err) => {
 		if (err) throw err;
-		console.log("log.lua deleted.");
+		console.log("pd-log.lua deleted.");
 	});
 }
 
 fs.lstatSync(FILTER_FOLDER).isDirectory();
 fs.lstatSync(MARKDOWN_FOLDER).isDirectory();
 if (!fs.existsSync(OUTPUT_FOLDER)) {
-  fs.mkdirSync(OUTPUT_FOLDER)
+	fs.mkdirSync(OUTPUT_FOLDER);
 }
 
 const files = fs.readdirSync(MARKDOWN_FOLDER);
@@ -91,7 +91,7 @@ mdFiles.forEach(function (filename) {
 	tocArgs.push({ src: src, args: args });
 });
 
-mdFiles.push('Home.md')
+mdFiles.push("Home.md");
 var convertArgs = [];
 // convert
 mdFiles.forEach(function (filename) {
@@ -107,7 +107,7 @@ mdFiles.forEach(function (filename) {
 		"/" +
 		name +
 		".json";
-	console.log(args);
+	// console.log(args);
 	convertArgs.push({ src: src, args: args });
 });
 
@@ -196,27 +196,8 @@ async function processFiles() {
 
 processFiles();
 
-function containImage(image, maxSizePt) {
-	var width = image.bitmap.width;
-	var height = image.bitmap.height;
-	if (width > height) {
-		if (width > maxSizePt.x) {
-			width = maxSizePt.x;
-			height = Jimp.AUTO;
-		} else if (height > maxSizePt.y) {
-			height = maxSizePt.y;
-			width = Jimp.AUTO;
-		}
-	} else {
-		if (height > maxSizePt.y) {
-			height = maxSizePt.y;
-			width = Jimp.AUTO;
-		} else if (width > maxSizePt.x) {
-			width = maxSizePt.x;
-			height = Jimp.AUTO;
-		}
-	}
-	image.resize(width, height);
+function resizeImage(image, maxSizePt) {
+	image.resize(maxSizePt.x, Jimp.AUTO);
 	return image;
 }
 
@@ -228,7 +209,7 @@ if (jpgFiles) {
 			if (err) {
 				console.log(err);
 			} else {
-				image = containImage(image, MAX_IMAGE_DIMENSIONS);
+				image = resizeImage(image, MAX_IMAGE_DIMENSIONS);
 				image.write("source/images/" + name + ".png");
 				console.info("Jimp successfully converted image: " + filename);
 			}
@@ -243,7 +224,7 @@ if (pngFiles) {
 			if (err) {
 				console.log(err);
 			} else {
-				image = containImage(image, MAX_IMAGE_DIMENSIONS);
+				image = resizeImage(image, MAX_IMAGE_DIMENSIONS);
 				image.write("source/images/" + filename);
 				console.info("Jimp successfully converted image: " + filename);
 			}

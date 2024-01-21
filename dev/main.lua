@@ -1,37 +1,37 @@
 local pd_survival_manual = {
-  _VERSION     = 'playdate-markdown v0.1.0',
-  _DESCRIPTION = 'Tool for converting markdown into a Playout tree for display on a Playdate',
-  _URL         = 'https://github.com/edzillion/playdate-markdown',
+  _VERSION     = 'pd-survival-manual v0.1.0',
+  _DESCRIPTION = "Libre Survival Manual based on ligi's Android SurvivalManual",
+  _URL         = 'https://github.com/edzillion/pd-survival-manual',
   _LICENSE     = [[GNU AFFERO GENERAL PUBLIC LICENSE Version 3]]
 }
 
 import 'CoreLibs/animation'
-local gfx          = playdate.graphics
-local file         = playdate.file
+local gfx                      = playdate.graphics
+local file                     = playdate.file
 
-__                 = import 'underscore'
-log                = import "log"
-log.level          = 'info'
+__                             = import 'underscore'
+log                            = import "pd-log"
+log.level                      = 'debug'
 
-local MarkdownTree = import 'markdown-tree'
+local MarkdownTree             = import 'markdown-tree'
 
-local JSON_FOLDER  = 'json'
-MODES              = {
+local JSON_FOLDER              = 'json'
+MODES                          = {
   READING = 1,
   TABBING = 2,
   LOADING = 3,
   PRELOADING = 4
 }
 
-local loadingPage  = 'Home'
-UseCoroutines      = true
-BuildTreeRoutine   = nil
-DrawTreeRoutine    = nil
-
+local loadingPage              = 'Home'
+UseCoroutines                  = true
+BuildTreeRoutine               = nil
+DrawTreeRoutine                = nil
+local drawingPhase             = false
 
 local currentPage
 CurrentMode                    = MODES.LOADING
-local pages                    = {}
+Pages                          = {}
 local history                  = {}
 
 local pointer
@@ -52,11 +52,11 @@ local skipScrollTicks          = 0
 -- The scroll offset
 local offset                   = 0
 local previousOffset           = offset
--- The crank change sinice last update
+-- The crank change since last update
 local crankChange              = 0
 
 local loaderAnimation
-local treeElementsCount
+TreeElementsCount              = nil
 local treeElementsBuilt        = 0
 local treeElementsDrawn        = 0
 local scrollButtonOffsetChange = 0
@@ -73,20 +73,21 @@ local function changeMode(newMode)
 end
 
 local function setPointerPos()
-  log.info('setPointerPos()')
+  log.debug('setPointerPos()')
   if #currentPage.tree.tabIndex == 0 or CurrentMode == MODES.READING then
     pointer:remove()
-    log.info('pointer:remove()')
+    log.debug('pointer:remove()')
     return
   end
 
-  log.info('pointer:add()')
+  log.debug('pointer:add()')
   pointer:add()
 
   selected = currentPage.tree.tabIndex[selectedIndex]
   local currentPageRect = currentPage.treeSprite:getBoundsRect()
 
-  local newPointerPos = getRectAnchor(selected.rect, playout.kAnchorCenterLeft):offsetBy(getRectAnchor(currentPageRect,
+  local newPointerPos = playout.getRectAnchor(selected.rect, playout.kAnchorCenterLeft):offsetBy(playout.getRectAnchor(
+    currentPageRect,
     playout.kAnchorTopLeft):unpack())
 
   if newPointerPos.y < 15 and newPointerPos.y > -240 then
@@ -101,22 +102,23 @@ local function setPointerPos()
 
   if newPointerPos.y > 0 and newPointerPos.y < 240 then
     pointerPos = newPointerPos
-    log.info('pointerPos', pointerPos)
+    log.debug('pointerPos', pointerPos)
   end
 end
 
 local function retargetPointer()
-  log.info('retargetPointer()')
+  log.debug('retargetPointer()')
   local currentPageRect = currentPage.treeSprite:getBoundsRect()
   for i = 1, #currentPage.tree.tabIndex do
     local tab = currentPage.tree.tabIndex[i]
-    local tabPos = getRectAnchor(tab.rect, playout.kAnchorCenterLeft):offsetBy(getRectAnchor(currentPageRect,
+    local tabPos = playout.getRectAnchor(tab.rect, playout.kAnchorCenterLeft):offsetBy(playout.getRectAnchor(
+      currentPageRect,
       playout.kAnchorTopLeft):unpack())
     -- we have a tab in viewable range
     if tabPos.y > 10 and tabPos.y < 230 then
       selectedIndex = i
       changeMode(MODES.TABBING)
-      log.info('tab found, selectedIndex:', selectedIndex)
+      log.debug('tab found, selectedIndex:', selectedIndex)
       break;
     end
   end
@@ -127,21 +129,32 @@ local function nextTabItem()
   selectedIndex = selectedIndex + 1
   if selectedIndex > #currentPage.tree.tabIndex then
     selectedIndex = #currentPage.tree.tabIndex
+  else
+    local currPos = pointerPos
+    setPointerPos()
+    if pointerPos == currPos and offset == previousOffset then
+      -- no new pointer position, next item is too far away
+      selectedIndex = selectedIndex - 1
+    end
   end
-  setPointerPos()
 end
 
 local function prevTabItem()
   selectedIndex = selectedIndex - 1
   if selectedIndex < 1 then
     selectedIndex = 1
+  else
+    local currPos = pointerPos
+    setPointerPos()
+    if pointerPos == currPos and offset == previousOffset then
+      -- no new pointer position, next item is too far away
+      selectedIndex = selectedIndex + 1
+    end
   end
-  setPointerPos()
 end
 
 local function clickLink()
-  log.info('clickLink()')
-  table.insert(history, { name = currentPage.name, offset = offset, selectedIndex = selectedIndex })
+  log.debug('clickLink()')
   local selected = currentPage.tree.tabIndex[selectedIndex]
   local linkTarget = selected.properties.target
 
@@ -152,18 +165,21 @@ local function clickLink()
     pointer:remove()
 
     local currentPageRect = currentPage.treeSprite:getBoundsRect()
-    local targetPos       = getRectAnchor(target.rect, playout.kAnchorTopLeft):offsetBy(getRectAnchor(currentPageRect,
+    local targetPos       = playout.getRectAnchor(target.rect, playout.kAnchorTopLeft):offsetBy(playout.getRectAnchor(
+      currentPageRect,
       playout.kAnchorTopLeft):unpack())
-    offset                = offset - targetPos.y
+    offset                = offset - targetPos.y + 8 --styles.Root.spacing
     changeMode(MODES.READING)
     setPointerPos()
   else
     -- The link target is a page
+    table.insert(history, { name = currentPage.name, offset = offset, selectedIndex = selectedIndex })
+
     changeMode(MODES.LOADING)
     currentPage.treeSprite:remove()
     currentPage.treeSprite = nil
     currentPage.tree = nil
-    treeElementsCount = nil
+    TreeElementsCount = nil
 
     loadingPage = linkTarget
 
@@ -171,6 +187,7 @@ local function clickLink()
       BuildTreeRoutine = coroutine.create(function(pageTree)
         pageTree:build(function(page)
           currentPage = page
+          drawingPhase = false
           selectedIndex = 1
           offset = 0
           changeMode(MODES.READING)
@@ -178,7 +195,7 @@ local function clickLink()
         end)
       end)
     else
-      pages[loadingPage]:build(function(page)
+      Pages[loadingPage]:build(function(page)
         currentPage = page
         selectedIndex = 1
         offset = 0
@@ -241,36 +258,18 @@ local inputHandlers = {
         local targetTree = table.remove(history, #history)
         loadingPage = targetTree.name
         selectedIndex = targetTree.selectedIndex
-        if currentPage.name == loadingPage then
-          offset = targetTree.offset
-          changeMode(MODES.TABBING)
-          currentPage:update(crankChange, offset)
-          setPointerPos()
-        else
-          changeMode(MODES.LOADING)
-          currentPage.treeSprite:remove()
-          currentPage.treeSprite = nil
-          currentPage.tree = nil
-          treeElementsCount = nil
 
-          if UseCoroutines then
-            BuildTreeRoutine = coroutine.create(function(pageTree)
-              pageTree:build(function(page)
-                currentPage = page
-                selectedIndex = targetTree.selectedIndex
-                offset = targetTree.offset
-                if currentPage.name == 'Home' then
-                  changeMode(MODES.TABBING)
-                else
-                  changeMode(MODES.READING)
-                end
-                currentPage:update(crankChange, offset)
-                setPointerPos()
-              end)
-            end)
-          else
-            pages[loadingPage]:build(function(page)
+        changeMode(MODES.LOADING)
+        currentPage.treeSprite:remove()
+        currentPage.treeSprite = nil
+        currentPage.tree = nil
+        TreeElementsCount = nil
+
+        if UseCoroutines then
+          BuildTreeRoutine = coroutine.create(function(pageTree)
+            pageTree:build(function(page)
               currentPage = page
+              drawingPhase = false
               selectedIndex = targetTree.selectedIndex
               offset = targetTree.offset
               if currentPage.name == 'Home' then
@@ -281,7 +280,20 @@ local inputHandlers = {
               currentPage:update(crankChange, offset)
               setPointerPos()
             end)
-          end
+          end)
+        else
+          Pages[loadingPage]:build(function(page)
+            currentPage = page
+            selectedIndex = targetTree.selectedIndex
+            offset = targetTree.offset
+            if currentPage.name == 'Home' then
+              changeMode(MODES.TABBING)
+            else
+              changeMode(MODES.READING)
+            end
+            currentPage:update(crankChange, offset)
+            setPointerPos()
+          end)
         end
       end
     end
@@ -306,14 +318,6 @@ local inputHandlers = {
   end
 }
 
-function coroutine.xpcall(co)
-  local output = { coroutine.resume(co) }
-  if output[1] == false then
-    return false, output[2], debug.traceback(co)
-  end
-  return table.unpack(output)
-end
-
 local function init()
   log.info('Initialising. Checking folders ...')
   assert(file.isdir(JSON_FOLDER), 'Missing folder: ' .. JSON_FOLDER)
@@ -324,7 +328,7 @@ local function init()
     local fileEntry = { name = filename:match("(.+)%..-") }
     local jsonFile = playdate.file.open(JSON_FOLDER .. '/' .. filename, playdate.file.kFileRead)
     fileEntry.json = json.decodeFile(jsonFile)
-    log.info('Decoded successfully: ' .. filename)
+    log.debug('Decoded successfully: ' .. filename)
     return fileEntry
   end)
 
@@ -332,9 +336,9 @@ local function init()
   __.each(filesJson, function(fileEntry)
     local page = MarkdownTree.new(fileEntry)
     page.name = fileEntry.name
-    log.info('Page converted successfully: ' .. fileEntry.name)
+    log.debug('Page converted successfully: ' .. fileEntry.name)
     -- playdate.datastore.writeImage(image, path)
-    pages[fileEntry.name] = page
+    Pages[fileEntry.name] = page
   end)
 
   local pointerImg = gfx.image.new("images/pointer")
@@ -346,13 +350,14 @@ local function init()
     BuildTreeRoutine = coroutine.create(function(pageTree)
       pageTree:build(function(page)
         currentPage = page
+        drawingPhase = false
         changeMode(MODES.TABBING)
         setPointerPos()
         playdate.inputHandlers.push(inputHandlers)
       end)
     end)
   else
-    pages[loadingPage]:build(function(page)
+    Pages[loadingPage]:build(function(page)
       currentPage = page
       changeMode(MODES.TABBING)
       setPointerPos()
@@ -379,46 +384,29 @@ local function init()
   -- add input handlers
 end
 
--- Redefine the function with your own
----@diagnostic disable-next-line: duplicate-set-field
-os = {}
-function os.date(format, time)
-  local time = playdate.getTime()
-  local f = {
-    Y = time.year,
-    m = time.month,
-    d = time.day,
-    H = time.hour,
-    M = time.minute,
-    S = time.second
-  }
-  local timeString = format:gsub("%%([a-zA-Z])", function(c)
-    return f[c]
-  end)
-
-  -- Call the original function
-  return timeString
-end
-
 function playdate.update()
   if CurrentMode == MODES.LOADING then
-    if treeElementsCount == nil then
-      treeElementsCount = #pages[loadingPage].treeData.json.blocks
-      treeElementsBuilt = 0
+    if TreeElementsCount == nil then
+      if DrawTreeRoutine then
+        drawingPhase = true
+        TreeElementsCount = #Pages[loadingPage].tree.root.children
+        treeElementsDrawn = 0
+      else
+        TreeElementsCount = #Pages[loadingPage].treeData.json.blocks
+        treeElementsBuilt = 0
+      end
     end
 
     local prevColor = gfx.getColor()
     gfx.setColor(gfx.kColorBlack)
 
     loaderAnimation:draw(0, 0)
-    gfx.setColor(playdate.graphics.kColorBlack)
-
-    local loadingText = DrawTreeRoutine and 'Drawing ' .. loadingPage or 'Loading ' .. loadingPage
+    local loadingText = drawingPhase and 'Drawing ' .. loadingPage or 'Loading ' .. loadingPage
     gfx.drawTextAligned(loadingText, 200, 190, kTextAlignment.center)
 
     gfx.drawRect(60, 220, 280, 6)
-    local xScale = DrawTreeRoutine and 279 * (treeElementsDrawn / treeElementsCount) or
-        279 * (treeElementsBuilt / treeElementsCount)
+    local xScale = drawingPhase and 279 * (treeElementsDrawn / TreeElementsCount) or
+        279 * (treeElementsBuilt / TreeElementsCount)
     gfx.setLineWidth(6)
     gfx.drawLine(60, 223, 60 + xScale, 223)
     gfx.setLineWidth(1)
@@ -427,29 +415,27 @@ function playdate.update()
     if DrawTreeRoutine then
       local status = coroutine.status(DrawTreeRoutine)
       if status == "suspended" then
-        local success, elementsDrawn = coroutine.resume(DrawTreeRoutine, pages[loadingPage])
+        local success, elementsDrawn = coroutine.resume(DrawTreeRoutine, Pages[loadingPage])
         if success and elementsDrawn then
           treeElementsDrawn = elementsDrawn
         end
       elseif status == 'dead' then
         DrawTreeRoutine = nil
-        treeElementsDrawn = 0
       end
-    else
+    elseif BuildTreeRoutine then
       local status = coroutine.status(BuildTreeRoutine)
       if status == "suspended" then
-        local success, elementsBuilt = coroutine.resume(BuildTreeRoutine, pages[loadingPage])
-        if elementsBuilt == treeElementsCount then
-          local debug
-        end
+        local success, elementsBuilt = coroutine.resume(BuildTreeRoutine, Pages[loadingPage])
         if success and elementsBuilt then
           treeElementsBuilt = elementsBuilt
+          if treeElementsBuilt == TreeElementsCount then
+            local d
+          end
         end
       elseif status == 'dead' then
-        log.error(coroutine.xpcall(BuildTreeRoutine))
+        log.warn('BuildTreeRoutine coroutine dead, should not hit here.')
       end
     end
-
   else
     offset = offset + scrollButtonOffsetChange
     -- Keep offset within bounds of page
@@ -473,7 +459,6 @@ function playdate.update()
   end
 
   playdate.timer.updateTimers()
-  playdate.drawFPS()
 end
 
 local loaderImgTbl = gfx.imagetable.new('images/book_animation.gif')

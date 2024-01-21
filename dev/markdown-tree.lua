@@ -2,7 +2,6 @@ import "CoreLibs/graphics"
 import "CoreLibs/sprites"
 import "CoreLibs/timer"
 local gfx = playdate.graphics
-local geo = playdate.geometry
 
 import "playout"
 local styles = import 'styles'
@@ -12,8 +11,8 @@ local mdTree = {}
 -- private methods
 local mdTreeMethods = {}
 
-local redrawRoutine
 local rootElementCounter
+local parseFunctions
 
 HTML_TO_PLAYOUT_PROPS = {
   cellpadding = 'padding',
@@ -50,13 +49,16 @@ function mdTreeMethods:build(callback)
   self.tree = playout.tree:build(self, self.createTree, self.treeData)
   self.tree:computeTabIndex()
 
+  TreeElementsCount = nil
   local treeImage
-  log.info('Drawing Tree for ' .. self.treeData.name)
+  log.debug('Drawing Tree for ' .. self.treeData.name)
   DrawTreeRoutine = coroutine.create(function()
     treeImage = self.tree:draw()
   end)
-  coroutine.yield()
-  log.info('Creating treeSprite for ' .. self.treeData.name)
+  if UseCoroutines then
+    coroutine.yield()
+  end
+  log.debug('Creating treeSprite for ' .. self.treeData.name)
   self.treeSprite = gfx.sprite.new(treeImage)
   local treeRect  = self.treeSprite:getBoundsRect()
   local anchor    = playout.getRectAnchor(treeRect, playout.kAnchorTopLeft)
@@ -145,6 +147,7 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
   local indentWithStars
   local bulletListItems = {}
   local bulletListDepth = 0
+  local anchorId
 
   parseFunctions = {
     BlockQuote = function(blockQuote)
@@ -202,9 +205,25 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
                   subNode.properties.target:sub(1, 7) == 'http://' then
                 -- external link, just print it's url string
                 listTextBuffer = listTextBuffer .. subNode.text .. ' (' .. subNode.properties.target .. ')'
+              elseif subNode.properties.target and rootElementCounter > 3 then
+                -- link, not TOC (rootElementCounter > 3)
+                if listTextBuffer ~= '' then
+                  if listTextBuffer:sub(#listTextBuffer, #listTextBuffer) == '\n' then
+                    listTextBuffer = listTextBuffer:sub(1, #listTextBuffer - 1)
+                  end
+                  local textNode = text(listTextBuffer)
+                  boxNode:appendChild(textNode)
+                  listTextBuffer = ''
+                end
+                local node = box({ hAlign = kAlignCenter, width = 388 })
+                local underlineNode = box({ borderBottom = 2 })
+                underlineNode:appendChild(subNode)
+                node:appendChild(underlineNode)
+                boxNode:appendChild(node)
               else
-                subNode.text = listTextBuffer .. subNode.text
-                boxNode:appendChild(subNode)
+                local underlineNode = box({ borderBottom = 2 })
+                underlineNode:appendChild(subNode)
+                boxNode:appendChild(underlineNode)
                 listTextBuffer = ''
               end
             end
@@ -214,7 +233,6 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
         bulletListItems = {}
         indentWithStars = nil
       end
-
 
       log.trace('Exit Bulletlist, depth:', bulletListDepth)
       bulletListDepth = bulletListDepth - 1
@@ -235,11 +253,10 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
         -- has an anchor
         boxNode.properties.id = header.c[2][1]
       end
-
       return parseAndAddToTree(header.c[3][1], boxNode)
     end,
     HorizontalRule = function(horizR)
-      return box({ width = 380, height = 3, borderTop = 3 })
+      return box({ width = 388, height = 3, borderTop = 3 })
     end,
     Image = function(img)
       local imgPath = img.c[3][1]
@@ -307,13 +324,57 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
     Para = function(para)
       local boxNode = box(styles.Para or nil)
 
+      local lastTextNode
       __.each(para.c, function(subBlock)
         local node = parseNode(subBlock)
         if node then
           if subBlock.t == 'Image' then
-            log.warn('Para subblock is an Image, special case?')
+            boxNode = box(styles.Image)
+            if anchorId then
+              boxNode.properties.id = anchorId
+            end
+            boxNode:appendChild(node)
+            lastTextNode = nil
+          elseif subBlock.t == 'Str' and subBlock.c:sub(1, 8) == '*Figure ' then
+            -- is an Image Caption, center
+            local captionNode = box()
+            captionNode:appendChild(node)
+            boxNode = box(styles.ImageCaption)
+            boxNode:appendChild(captionNode)
+          elseif subBlock.t == 'Link' then
+            local strings = __.pluck(subBlock.c[2], 'c')
+            local linkText = __.join(strings, ' ')
+            local linkLocation = subBlock.c[3][1]
+
+            if linkLocation:sub(1, 1) ~= '#' and Pages[linkLocation] == nil then              
+              -- this is not a valid link
+              local isWebLink = linkLocation:match("https?://[%w-_%.%?%.:/%+=&]+")
+
+              if boxNode.children and boxNode.children[#boxNode.children] and boxNode.children[#boxNode.children].text then
+                lastTextNode = boxNode.children[#boxNode.children]
+                if lastTextNode.text:sub(#lastTextNode.text, #lastTextNode.text) == '\n' then
+                  lastTextNode.text = lastTextNode.text:sub(1, #lastTextNode.text - 1)
+                end
+                if isWebLink then
+                  lastTextNode.text = lastTextNode.text .. linkText .. ' (' .. linkLocation .. ')'
+                else
+                  lastTextNode.text = lastTextNode.text .. linkText
+                end
+              else
+                if isWebLink then
+                  boxNode:appendChild(text(linkText .. ' (' .. linkLocation .. ')'))
+                else
+                  boxNode:appendChild(text(linkText))
+                end
+              end
+            end
+          elseif subBlock.t == 'Str' and lastTextNode then
+            lastTextNode.text = lastTextNode.text .. node.text
+            lastTextNode = nil
+          else
+            boxNode:appendChild(node)
+            lastTextNode = nil
           end
-          boxNode:appendChild(node)
         end
       end)
 
@@ -329,20 +390,46 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
     end,
     Plain = function(plain)
       local boxNode = box(styles.Plain or nil)
+      local lastTextNode
       __.each(plain.c, function(subBlock)
-        boxNode = parseAndAddToTree(subBlock, boxNode)
+        if subBlock.t == 'Link' then
+          local strings = __.pluck(subBlock.c[2], 'c')
+          local linkText = __.join(strings, ' ')
+          local linkLocation = subBlock.c[3][1]
+          if linkLocation:sub(1, 1) ~= '#' and Pages[linkLocation] == nil then
+            local isWebLink = linkLocation:match("https?://[%w-_%.%?%.:/%+=&]+")
+            -- this is not a valid link
+            if boxNode.children and boxNode.children[#boxNode.children] and boxNode.children[#boxNode.children].text then
+              lastTextNode = boxNode.children[#boxNode.children]
+              if lastTextNode.text:sub(#lastTextNode.text, #lastTextNode.text) == '\n' then
+                lastTextNode.text = lastTextNode.text:sub(1, #lastTextNode.text - 1)
+              end
+              if isWebLink then
+                lastTextNode.text = lastTextNode.text .. linkText .. ' (' .. linkLocation .. ')'
+              else
+                lastTextNode.text = lastTextNode.text .. linkText
+              end
+            else
+              if isWebLink then
+                boxNode:appendChild(text(linkText .. ' (' .. linkLocation .. ')'))
+              else
+                boxNode:appendChild(text(linkText))
+              end
+            end
+          else
+            boxNode = parseAndAddToTree(subBlock, boxNode)
+            lastTextNode = nil
+          end
+        elseif subBlock.t == 'Str' and lastTextNode then
+          lastTextNode.text = lastTextNode.text .. subBlock.c
+        else
+          boxNode = parseAndAddToTree(subBlock, boxNode)
+          lastTextNode = nil
+        end
       end)
       return boxNode
     end,
-    Str = function(str)
-      -- Dealing with TOC generated extra link string
-      if str.c:sub(1, 5) == '{#toc' then
-        return
-      end
-      -- if string is empty return nil (don't add an element)
-      local textNode = str.c ~= '' and text(str.c, textProps or nil) or nil
-      return textNode
-    end,
+
     RawBlock = function(rawB)
       -- Mostly dealing with HTML tables
       if rawB.c[1] == 'html' then
@@ -360,6 +447,10 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
 
         if rawBlockTag:sub(1, 6) == '<table' then
           tableNode = box(styles.Table or tagProps)
+          if anchorId then
+            tableNode.properties.id = anchorId
+            anchorId = ''
+          end
           return tableNode
         elseif rawBlockTag:sub(1, 8) == '</table>' then
           tableNode = nil
@@ -374,7 +465,7 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
           elseif rawBlockTag:sub(1, 5) == '</tr>' then
             -- At closing tag of table row, we know how many cols there are so calc width
             __.each(tableRowNode.children, function(colNode)
-              colNode.properties.width = 380 / #tableRowNode.children
+              colNode.properties.width = 388 / #tableRowNode.children
             end)
             tableNode:appendChild(tableRowNode)
             tableRowNode = nil
@@ -421,9 +512,11 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       local boxNode = box()
       if rawI.c[2]:sub(1, 3) == '<a ' then
         -- anchor, add id to props
-        boxNode.properties.id = rawI.c[2]:match('<a%s+name%s-=%s-"(.-)"')
+        anchorId = rawI.c[2]:match('<a%s+name%s-=%s-"(.-)"')
+        return nil
       elseif rawI.c[2] == '</a>' then
         --end anchor
+        return nil
       elseif rawI.c[2]:sub(1, 11) == '<font color' then
         -- textProps apply to all text() elements inside the font tag
         textProps = extractProps(rawI.c[2])
@@ -436,45 +529,51 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
       end
       return boxNode
     end,
+    Str = function(str)
+      -- Dealing with TOC generated extra link string
+      if str.c:sub(1, 5) == '{#toc' then
+        return
+      end
+      -- if string is empty return nil (don't add an element)
+      local textNode = str.c ~= '' and text(str.c, textProps or nil) or nil
+      return textNode
+    end,
     Table = function(pandocTable)
       -- Markdown tables. HTML tables are RawBlock elements
-      local attr = pandocTable.c[1]
-      local boxNode = box(styles.Table or { maxWidth = 380 })
+      local boxNode = box(styles.Table or { maxWidth = 388 })
+      if anchorId then
+        boxNode.properties.id = anchorId
+        anchorId = ''
+      end
 
-      local caption = pandocTable.c[2]
       local colspecs = pandocTable.c[3]
       local head = pandocTable.c[4]
       local bodies = pandocTable.c[5]
-      local foot = pandocTable.c[6]
 
       -- Determine the props for each col based on colspecs
       local colProps = {}
       for i = 1, #colspecs do
+        ---@diagnostic disable-next-line: undefined-field
         local props = table.shallowcopy(styles.TableCol, { hAlign = PANDOC_TO_PLAYOUT_VALS[colspecs[i][1].t] })
         if colspecs[i][2].t ~= 'ColWidthDefault' then
-          props.width = colspecs[i][2].c * 380
+          props.width = colspecs[i][2].c * 388
         else
-          props.width = 380 / #colspecs
+          props.width = 388 / #colspecs
         end
         table.insert(colProps, props)
       end
 
       -- First deal with the header row
-      local headAttr = head[1]
       local headRows = head[2]
       if headRows then
         for i = 1, #headRows do
           local rowNode = box(styles.TableRow)
-          local rowAttr = headRows[i][1]
           local cells = headRows[i][2]
           for j = 1, #cells do
+            ---@diagnostic disable-next-line: undefined-field
             local headProps = table.shallowcopy(colProps[j], styles.TableHead)
             local colNode = box(headProps)
             local cell = cells[j]
-            local cellAttr = cell[1]
-            local cellAlign = cell[2]
-            local colSpan = cell[3]
-            local rowSpan = cell[4]
             local cellContents = cell[5]
             if #cellContents == 0 then
               local node = text('')
@@ -493,22 +592,14 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
 
       -- Then deal with the rest of the table rows
       for i = 1, #bodies do
-        local bodyAttr = bodies[i][1]
-        local row_head_columns = bodies[i][2]
-        local headRows = bodies[i][3]
         local bodyRows = bodies[i][4]
         if bodyRows then
           for j = 1, #bodyRows do
             local rowNode = box(styles.TableRow)
-            local rowAttr = bodyRows[j][1]
             local cells = bodyRows[j][2]
             for k = 1, #cells do
               local cellNode = box(colProps[k])
               local cell = cells[k]
-              local cellAttr = cell[1]
-              local cellAlign = cell[2]
-              local colSpan = cell[3]
-              local rowSpan = cell[4]
               local cellContents = cell[5]
               if #cellContents == 0 then
                 local node = text('')
@@ -525,74 +616,39 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
           end
         end
       end
-      local d
       return boxNode
     end
   }
 
   -- Walk the page tree parsing nodes as we go
   rootElementCounter = 0
-  log.info('walking page tree...')
+  log.debug('walking page tree...')
+  -- -- Add title to Home page
+  -- if treeEntry.name == 'Home' then
+  --   local textNode = text('Survival Manual')
+  --   local boxNode = box(styles.Title)
+  --   boxNode:appendChild(textNode)
+  --   root:appendChild(boxNode)
+  -- end
   local function walkTree(treeNodes)
     for i = 1, #treeNodes do
       rootElementCounter = i
       local node = treeNodes[i]
       lastNode = parseNode(node)
       if lastNode then
-        log.info('Adding top level node ' .. node.t .. ' at ' .. #root.children + 1)
-        if (node.t:sub(1, 6) == 'Header') then
-          lastNode.children[1].text = (#root.children + 1) .. ' ' .. lastNode.children[1].text
-          local d
-        end
-
+        log.debug('Adding top level node ' .. node.t .. ' at ' .. #root.children + 1)
         root:appendChild(lastNode)
       end
     end
   end
 
   walkTree(treeEntry.json.blocks)
+
+  -- free up memory?
+  parseFunctions = nil
+
   -- root is our generated page
   return root
-end
-
-function mdTreeMethods:reDraw(newLastElement)
-  log.info('Redrawing Tree for ' .. self.treeData.name)
-
-  local currentImg = self.tree.img:copy()
-  local cw, ch = currentImg:getSize()
-  if UseCoroutines then
-    coroutine.yield('copy previous sprite image')
-  end
-  self.tree:layout(self.lastElementNum, newLastElement)
-  local rect = self.tree.rect
-  if UseCoroutines then
-    coroutine.yield('layout new tree')
-  end
-  local newTreeImage = self.tree:draw(self.lastElementNum, newLastElement)
-  if UseCoroutines then
-    coroutine.yield('draw new tree')
-  end
-  local newImg = gfx.image.new(rect.width, rect.height + ch)
-  if UseCoroutines then
-    coroutine.yield('new target sprite image')
-  end
-  gfx.pushContext(newImg)
-  do
-    currentImg:draw(0, 0)
-    newTreeImage:draw(0, ch)
-  end
-  gfx.popContext()
-  if UseCoroutines then
-    coroutine.yield('draw to target sprite image')
-  end
-  self.tree.img = newImg
-  self.treeSprite:setImage(newImg)
-
-  self.lastElementNum = newLastElement
-  if UseCoroutines then
-    coroutine.yield('set new sprite image')
-  end
-  log.info('Tree successfully redrawn for ' .. self.treeData.name)
 end
 
 function mdTreeMethods:update(crankChange, offset)
@@ -606,52 +662,6 @@ function mdTreeMethods:update(crankChange, offset)
       treePosition.y = (self.treeSprite.height / 2) + offset
     end
   end
-
-  -- if self.lastElementNum < #self.treeData.json.blocks then
-  --   local topElementIndex = 1
-  --   local accum = self.tree.root.properties.padding
-  --   for i = 1, self.lastElementNum do
-  --     local node = self.tree.root.children[i]
-  --     accum = accum + node.rect.height + self.tree.root.properties.spacing
-  --     if -accum < offset then
-  --       topElementIndex = i
-  --       break
-  --     end
-  --   end
-  -- if topElementIndex > self.lastElementNum - 10 and CurrentMode ~= MODES.PRELOADING then
-  --   log.info('Redrawing from lasElemNum: ' .. self.lastElementNum)
-  --   if UseCoroutines then
-  --     CurrentMode = MODES.PRELOADING
-  --     redrawRoutine = coroutine.create(function(lastElemNum)
-  --       self:reDraw(lastElemNum)
-  --     end)
-  --   else
-  --     self:reDraw(self.lastElementNum + DRAW_ELEMENTS_SIZE)
-  --   end
-  -- end
-
-  -- if CurrentMode == MODES.PRELOADING then
-  --   local status = coroutine.status(redrawRoutine)
-  --   if status == "suspended" then
-  --     local success, stage = coroutine.resume(redrawRoutine, self.lastElementNum + DRAW_ELEMENTS_SIZE)
-  --     if success and stage then
-  --       log.trace(stage)
-  --     end
-  --   elseif status == 'dead' then
-  --     CurrentMode = MODES.READING
-  --   end
-  -- end
-  -- local target = currentPage.tree:get(targetId)
-  -- pointer:remove()
-
-  -- local currentPageRect = currentPage.treeSprite:getBoundsRect()
-  -- local targetPos       = getRectAnchor(target.rect, playout.kAnchorTopLeft):offsetBy(getRectAnchor(currentPageRect,
-  --   playout.kAnchorTopLeft):unpack())
-
-  -- if treePosition.y - 400 < -self.treeSprite.height / 2 then
-  --   self:reDraw(self.lastElementNum + DRAW_ELEMENTS_SIZE)
-  -- end
-  -- end
 
   self.treeSprite:moveTo(treePosition.x, treePosition.y)
   self.treeSprite:update()

@@ -8,7 +8,7 @@ const luaFiles = files.filter((file) => {
 });
 
 const logLines = /^.*log\..*$/gm;
-const logImports = /^.*log = import "log".*$/gm;
+const logImports = /^.*= import "pd-log".*$/gm;
 
 console.info("stripping files");
 luaFiles.forEach(function (filename) {
@@ -17,6 +17,6 @@ luaFiles.forEach(function (filename) {
 	modifiedText = modifiedText.replace(logImports, "");
 	modifiedText = strip(modifiedText, { language: "lua" });
 	fs.writeFileSync("source/" + filename, modifiedText);
-  console.info("stripped " + file);
+  console.info("stripped " + filename);
 });
 console.info("stripping files complete.");

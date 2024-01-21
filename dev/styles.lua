@@ -44,7 +44,7 @@ local styles = {
   BlockQuote = {
     borderLeft = 10,
     paddingLeft = 20,
-    spacing = 12,
+    spacing = 10,
     hAlign = playout.kAlignStretch
   },
   BlockQuoteContent = {
@@ -56,7 +56,7 @@ local styles = {
     fontFamily = playdate.graphics.font.newFamily(leggie24FontFamily)
   },
   Header1 = {
-    padding = 10,
+    padding = 8,
     backgroundColor = playdate.graphics.kColorBlack,
     -- backgroundAlpha = 2 / 8,
     color = playdate.graphics.kColorWhite,
@@ -64,7 +64,7 @@ local styles = {
     font = playdate.graphics.font.new(lucidiaFontFamily[playdate.graphics.font.kVariantBold])
   },
   Header2 = {
-    padding = 10,
+    padding = 8,
     backgroundAlpha = 2 / 8,
     border = 4,
     color = playdate.graphics.kColorWhite,
@@ -72,7 +72,7 @@ local styles = {
     font = playdate.graphics.font.new(lucidiaFontFamily[playdate.graphics.font.kVariantBold])
   },
   Header3 = {
-    paddingLeft = 10,
+    paddingLeft = 8,
     paddingRight = 6,
     paddingTop = 6,
     paddingBottom = 6,
@@ -89,8 +89,17 @@ local styles = {
     border = 1,
     font = playdate.graphics.font.new(leggie24FontFamily[playdate.graphics.font.kVariantBold])
   },
+  Image = {
+    hAlign = playout.kAlignCenter,
+    direction = playout.kDirectionHorizontal
+  },
+  ImageCaption = {
+    width = 388,
+    hAlign = playout.kAlignCenter,
+    fontFamily = playdate.graphics.font.newFamily(leggie18FontFamily)
+  },
   Para = {
-    spacing = 12,
+    spacing = 10,
     fontFamily = playdate.graphics.font.newFamily(leggie24FontFamily)
   },
   Root = {
@@ -99,8 +108,8 @@ local styles = {
     direction = playout.Vertical,
     hAlign = playout.kAlignStretch,
     scroll = 1,
-    padding = 10,
-    spacing = 8
+    padding = 6,
+    spacing = 6
   },
   Table = {
     border = 1,
@@ -124,8 +133,13 @@ local styles = {
     border = 1,
     direction = playout.kDirectionHorizontal,
     vAlign = playout.kAlignStretch,
-    maxWidth = 380
+    maxWidth = 388
+  },
+  Title = {
+    padding = 10,
+    font = playdate.graphics.font.new(lucidiaFontFamily[playdate.graphics.font.kVariantBold])
   }
+
 }
 
 -- styles.BulletList = styles.Para

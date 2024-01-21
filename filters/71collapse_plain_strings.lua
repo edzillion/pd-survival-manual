@@ -6,7 +6,7 @@ function Plain(elem)
       text = text .. elem.content[i].text
     elseif elem.content[i].t == 'Space' then
       text = text .. ' '
-    elseif elem.content[i].t == 'SoftBreak' then
+    elseif elem.content[i].t == 'SoftBreak' or elem.content[i].t == 'LineBreak' then
       text = text .. '\n'
     elseif elem.content[i].t == 'Link' then
       if elem.content[i].target:sub(1, 8) == 'https://'
@@ -18,7 +18,8 @@ function Plain(elem)
             text = text .. ' '
           end
         end
-        text = text .. ' (' .. elem.content[i].target .. ')'
+        local escapedLink = elem.content[i].target:gsub("([^%*])%*([^%*])", "%1**%2"):gsub("([^_])_([^_])", "%1__%2")
+        text = text .. ' (' .. escapedLink .. ')'
       else
         table.insert(contentTable, pandoc.Str(text))
         table.insert(contentTable, elem.content[i])

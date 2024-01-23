@@ -3,6 +3,7 @@
 ## Playdate Survival Manual
 
 Libre Survival Manual for the Playdate based on ligi's Android [SurvivalManual](https://github.com/ligi/SurvivalManual)
+
 Learn core survival skills such as:
 
 * Firecraft

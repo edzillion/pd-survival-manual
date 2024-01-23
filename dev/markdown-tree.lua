@@ -367,6 +367,13 @@ function mdTreeMethods.createTree(self, ui, treeEntry)
                   boxNode:appendChild(text(linkText))
                 end
               end
+            else
+              local rowNode = box({ hAlign = kAlignCenter, width = 388 })
+              local underlineNode = box({ borderBottom = 2 })
+              underlineNode:appendChild(node)
+              rowNode:appendChild(underlineNode)
+              boxNode:appendChild(rowNode)
+              lastTextNode = nil
             end
           elseif subBlock.t == 'Str' and lastTextNode then
             lastTextNode.text = lastTextNode.text .. node.text
@@ -665,8 +672,7 @@ function mdTreeMethods:update(crankChange, offset)
 
   self.treeSprite:moveTo(treePosition.x, treePosition.y)
   self.treeSprite:update()
-  playdate.timer.updateTimers()
-  playdate.drawFPS()
+  -- playdate.timer.updateTimers()
 end
 
 return mdTree

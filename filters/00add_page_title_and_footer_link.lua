@@ -9,10 +9,13 @@ function Pandoc(doc)
   if #titleWords == 0 then
     table.insert(titleWords, filename)
   end
-  local h1  
+  local h1
   if filename == 'Home' then
     h1 = pandoc.Header(1, 'pd Survival Manual')
   else
+    local linkBox = pandoc.Para { pandoc.LineBreak(), pandoc.Link('Return To Home', 'Home') }
+
+    table.insert(doc.blocks, linkBox)
     h1 = pandoc.Header(1, table.concat(titleWords, ' '))
   end
   table.insert(doc.blocks, 1, h1)

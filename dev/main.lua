@@ -190,7 +190,11 @@ local function clickLink()
           drawingPhase = false
           selectedIndex = 1
           offset = 0
-          changeMode(MODES.READING)
+          if currentPage.name == 'Home' then
+            changeMode(MODES.TABBING)
+          else
+            changeMode(MODES.READING)
+          end
           setPointerPos()
         end)
       end)
@@ -199,7 +203,11 @@ local function clickLink()
         currentPage = page
         selectedIndex = 1
         offset = 0
-        changeMode(MODES.READING)
+        if currentPage.name == 'Home' then
+          changeMode(MODES.TABBING)
+        else
+          changeMode(MODES.READING)
+        end
         setPointerPos()
       end)
     end
